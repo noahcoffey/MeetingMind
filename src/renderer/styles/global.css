@@ -130,7 +130,7 @@ body {
 }
 
 .page-header {
-  padding: calc(var(--titlebar-height) + 4px) 28px 0;
+  padding: calc(var(--titlebar-height) - 4px) 28px 16px;
   -webkit-app-region: drag;
   flex-shrink: 0;
 }
@@ -287,6 +287,11 @@ body {
   50% {
     box-shadow: 0 0 0 20px rgba(231, 76, 60, 0);
   }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 
 /* Audio level meter */
