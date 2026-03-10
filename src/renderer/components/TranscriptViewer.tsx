@@ -122,7 +122,10 @@ export default function TranscriptViewer({
           <div
             key={i}
             ref={isActive ? activeRef : undefined}
-            onClick={() => onSeek(u.start / 1000)}
+            onClick={() => {
+              console.log('Transcript click:', { speaker: u.speaker, startMs: u.start, seekSec: u.start / 1000 });
+              onSeek(u.start / 1000);
+            }}
             style={{
               padding: '4px 16px',
               paddingTop: showSpeaker ? 12 : 4,

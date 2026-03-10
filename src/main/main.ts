@@ -1,5 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
+import { pathToFileURL } from 'url';
 import { setupIpcHandlers } from './ipc';
 import { initializeStore, getSetting } from './store';
 import { initializeLogger, log } from './logger';
@@ -8,12 +10,13 @@ import { createTray, destroyTray, updateTray } from './tray';
 import { getRecordingStatus, startRecording, stopRecording, pauseRecording, resumeRecording } from './recording-manager';
 
 // Register media:// as a privileged scheme before app ready
-// so audio/video elements can load from it
+// so audio/video elements can load from it.
+// NOTE: standard must be false — standard schemes parse the first path
+// segment as a hostname (lowercased), which mangles absolute file paths.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'media',
     privileges: {
-      standard: true,
       secure: true,
       supportFetchAPI: true,
       stream: true,
@@ -127,10 +130,60 @@ app.whenReady().then(async () => {
   initializeLogger();
   log('info', 'MeetingMind starting up');
 
-  // Register custom protocol for serving local audio files to the renderer
+  // Register custom protocol for serving local audio files to the renderer.
+  // Handles range requests manually so audio seeking works correctly.
+  // (net.fetch with file:// doesn't return seekable responses.)
   protocol.handle('media', (request) => {
-    const filePath = decodeURIComponent(request.url.replace('media://', ''));
-    return net.fetch(`file://${filePath}`);
+    const filePath = decodeURIComponent(request.url.replace(/^media:\/\//, ''));
+
+    if (!fs.existsSync(filePath)) {
+      log('error', `Media file not found: ${filePath}`);
+      return new Response('Not found', { status: 404 });
+    }
+
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.wav': 'audio/wav',
+      '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
+    };
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+    const rangeHeader = request.headers.get('range');
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+        const chunkSize = end - start + 1;
+        const buffer = Buffer.alloc(chunkSize);
+        const fd = fs.openSync(filePath, 'r');
+        fs.readSync(fd, buffer, 0, chunkSize, start);
+        fs.closeSync(fd);
+
+        return new Response(new Uint8Array(buffer), {
+          status: 206,
+          headers: {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': String(chunkSize),
+            'Content-Type': contentType,
+          },
+        });
+      }
+    }
+
+    // Full file response — use Uint8Array so Electron's Response handles it correctly
+    const data = fs.readFileSync(filePath);
+    return new Response(new Uint8Array(data), {
+      status: 200,
+      headers: {
+        'Content-Length': String(fileSize),
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+      },
+    });
   });
 
   initializeStore();

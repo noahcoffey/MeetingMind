@@ -43,12 +43,15 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
       cancelAnimationFrame(animRef.current);
       if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current.removeAttribute('src');
+        audioRef.current.load();
         audioRef.current = null;
       }
     };
   }, []);
 
   const load = useCallback((src: string) => {
+    // Clean up previous audio element completely
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.removeAttribute('src');
@@ -56,13 +59,18 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
       cancelAnimationFrame(animRef.current);
     }
 
-    // Create via DOM so Electron's protocol handler can intercept the request
     const audio = document.createElement('audio');
-    audio.preload = 'metadata';
+    audio.preload = 'auto';
+    audio.crossOrigin = 'anonymous';
     audioRef.current = audio;
 
     audio.addEventListener('loadedmetadata', () => {
+      console.log('Audio metadata loaded, duration:', audio.duration, 'src:', src);
       setState(prev => ({ ...prev, duration: audio.duration, currentTime: 0 }));
+    });
+
+    audio.addEventListener('canplay', () => {
+      console.log('Audio can play:', src);
     });
 
     audio.addEventListener('ended', () => {
@@ -81,25 +89,59 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
     });
 
     audio.addEventListener('error', () => {
-      console.error('Audio load error:', audio.error?.message, 'src:', src);
+      console.error('Audio load error:', audio.error?.code, audio.error?.message, 'src:', src);
       setState(prev => ({ ...prev, isPlaying: false, duration: 0 }));
     });
 
+    // Set src and explicitly trigger load
     audio.src = src;
+    audio.load();
   }, [tick]);
 
-  const play = useCallback(() => { audioRef.current?.play(); }, []);
+  const play = useCallback(() => {
+    audioRef.current?.play().catch(err => {
+      console.error('Audio play failed:', err);
+    });
+  }, []);
+
   const pause = useCallback(() => { audioRef.current?.pause(); }, []);
+
   const toggle = useCallback(() => {
     if (!audioRef.current) return;
-    if (audioRef.current.paused) audioRef.current.play();
-    else audioRef.current.pause();
+    if (audioRef.current.paused) {
+      audioRef.current.play().catch(err => {
+        console.error('Audio play failed:', err);
+      });
+    } else {
+      audioRef.current.pause();
+    }
   }, []);
 
   const seek = useCallback((time: number) => {
-    if (!audioRef.current) return;
-    audioRef.current.currentTime = time;
-    setState(prev => ({ ...prev, currentTime: time }));
+    const audio = audioRef.current;
+    if (!audio) return;
+    console.log('Seeking to:', time, 'duration:', audio.duration, 'readyState:', audio.readyState);
+    // readyState must be >= HAVE_METADATA (1) to seek
+    if (audio.readyState >= 1) {
+      audio.currentTime = time;
+      setState(prev => ({ ...prev, currentTime: time }));
+      if (audio.paused) {
+        audio.play().catch(err => {
+          console.error('Audio play after seek failed:', err);
+        });
+      }
+    } else {
+      // Audio not ready yet — wait for it, then seek
+      const onReady = () => {
+        audio.removeEventListener('loadedmetadata', onReady);
+        audio.currentTime = time;
+        setState(prev => ({ ...prev, currentTime: time }));
+        audio.play().catch(err => {
+          console.error('Audio play after deferred seek failed:', err);
+        });
+      };
+      audio.addEventListener('loadedmetadata', onReady);
+    }
   }, []);
 
   const setRate = useCallback((rate: number) => {
