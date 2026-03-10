@@ -1,19 +1,20 @@
 import React from 'react';
-import SearchBar from './SearchBar';
+import PipelineWidget, { BackgroundJob } from './PipelineWidget';
 
 type Page = 'record' | 'recordings' | 'settings' | 'analytics';
 
 interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
-  onSearchSelect: (recordingId: string) => void;
+  backgroundJobs: BackgroundJob[];
+  onViewJobRecording: (recordingId: string) => void;
+  onDismissJob: (recordingId: string) => void;
 }
 
-export default function Sidebar({ currentPage, onNavigate, onSearchSelect }: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, backgroundJobs, onViewJobRecording, onDismissJob }: SidebarProps) {
   return (
     <div className="sidebar">
       <nav className="sidebar-nav">
-        <SearchBar onSelectResult={onSearchSelect} />
 
         <button
           className={`sidebar-item ${currentPage === 'record' ? 'active' : ''}`}
@@ -59,6 +60,12 @@ export default function Sidebar({ currentPage, onNavigate, onSearchSelect }: Sid
           Settings
         </button>
       </nav>
+
+      <PipelineWidget
+        jobs={backgroundJobs}
+        onViewRecording={onViewJobRecording}
+        onDismiss={onDismissJob}
+      />
 
       <div className="sidebar-version">
         MeetingMind v1.0.0
