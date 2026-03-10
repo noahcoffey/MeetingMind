@@ -92,7 +92,7 @@ export default function SearchBar({ onSelectResult }: SearchBarProps) {
   };
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', padding: '8px 8px 4px' }}>
+    <div ref={containerRef} style={{ position: 'relative' }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -129,8 +129,8 @@ export default function SearchBar({ onSelectResult }: SearchBarProps) {
         <div style={{
           position: 'absolute',
           top: '100%',
-          left: 8,
-          right: 8,
+          left: 0,
+          right: 0,
           marginTop: 4,
           background: 'var(--bg-card)',
           border: '1px solid var(--border-color)',
@@ -188,8 +188,8 @@ export default function SearchBar({ onSelectResult }: SearchBarProps) {
         <div style={{
           position: 'absolute',
           top: '100%',
-          left: 8,
-          right: 8,
+          left: 0,
+          right: 0,
           marginTop: 4,
           padding: '12px',
           background: 'var(--bg-card)',

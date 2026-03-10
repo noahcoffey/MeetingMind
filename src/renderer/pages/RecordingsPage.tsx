@@ -4,6 +4,7 @@ import TagEditor from '../components/TagEditor';
 import ExportMenu from '../components/ExportMenu';
 import TranscriptViewer from '../components/TranscriptViewer';
 import AudioPlayer from '../components/AudioPlayer';
+import SearchBar from '../components/SearchBar';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 
@@ -26,6 +27,9 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   const [utterances, setUtterances] = useState<any[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [filterTag, setFilterTag] = useState<string | null>(null);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [audioState, audioControls] = useAudioPlayer();
@@ -206,6 +210,24 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     loadAllTags();
   }
 
+  function startEditingTitle() {
+    if (!selectedRecording) return;
+    setEditTitle(selectedRecording.title || '');
+    setIsEditingTitle(true);
+    setTimeout(() => titleInputRef.current?.focus(), 0);
+  }
+
+  async function saveTitle() {
+    if (!selectedRecording) return;
+    const trimmed = editTitle.trim();
+    if (trimmed && trimmed !== selectedRecording.title) {
+      await window.meetingMind.renameRecording(selectedRecording.id, trimmed);
+      setSelectedRecording({ ...selectedRecording, title: trimmed });
+      loadRecordings();
+    }
+    setIsEditingTitle(false);
+  }
+
   async function handleRenameSpeaker(oldName: string, newName: string) {
     if (!selectedRecording) return;
     await window.meetingMind.renameSpeaker(selectedRecording.id, oldName, newName);
@@ -244,6 +266,29 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     ? recordings.filter(r => r.tags?.includes(filterTag))
     : recordings;
 
+  // Group recordings by day
+  function getDayLabel(dateStr: string): string {
+    const d = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    if (d.toDateString() === today.toDateString()) return 'Today';
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  }
+
+  const dayGroups: { label: string; recordings: typeof filteredRecordings }[] = [];
+  for (const rec of filteredRecordings) {
+    const label = getDayLabel(rec.date);
+    const last = dayGroups[dayGroups.length - 1];
+    if (last && last.label === label) {
+      last.recordings.push(rec);
+    } else {
+      dayGroups.push({ label, recordings: [rec] });
+    }
+  }
+
   return (
     <>
       <div className="page-header">
@@ -251,13 +296,15 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
       </div>
       <div className="page-content" style={{ display: 'flex', gap: 20, height: 'calc(100vh - 112px)' }}>
         {/* List */}
-        <div style={{ flex: '0 0 340px', overflowY: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <button className="btn btn-ghost" onClick={loadRecordings} style={{ fontSize: 12, padding: '4px 8px' }}>
-              Refresh
-            </button>
-
-            {/* Tag filter dropdown */}
+        <div style={{ flex: '0 0 340px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          {/* Fixed toolbar */}
+          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 8px 8px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <SearchBar onSelectResult={(id) => {
+                const rec = recordings.find(r => r.id === id);
+                if (rec) selectRecording(rec);
+              }} />
+            </div>
             {allTags.length > 0 && (
               <select
                 value={filterTag || ''}
@@ -268,7 +315,8 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                   borderRadius: 'var(--radius)',
                   color: 'var(--text-secondary)',
                   fontSize: 11,
-                  padding: '4px 8px',
+                  padding: '6px 8px',
+                  flexShrink: 0,
                 }}
               >
                 <option value="">All tags</option>
@@ -277,63 +325,151 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
             )}
           </div>
 
-          <div className="recording-list">
-            {filteredRecordings.length === 0 && (
-              <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                {filterTag ? 'No recordings with this tag.' : 'No recordings yet. Start a recording to get started.'}
+          {/* Scrollable recordings list */}
+          <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
+          {filteredRecordings.length === 0 && (
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+              {filterTag ? 'No recordings with this tag.' : 'No recordings yet. Start a recording to get started.'}
+            </div>
+          )}
+
+          {dayGroups.map(group => (
+            <div key={group.label}>
+              <div style={{
+                padding: '12px 4px 6px',
+                fontSize: 11,
+                fontWeight: 600,
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+              }}>
+                {group.label}
               </div>
-            )}
-            {filteredRecordings.map(rec => (
-              <div
-                key={rec.id}
-                className="recording-item"
-                onClick={() => selectRecording(rec)}
-                style={{
-                  borderColor: selectedRecording?.id === rec.id ? 'var(--accent-blue)' : undefined,
-                }}
-              >
-                <div className="recording-item-info">
-                  <div className="recording-item-title">{rec.title || 'Untitled Recording'}</div>
-                  <div className="recording-item-meta">
-                    {new Date(rec.date).toLocaleDateString()} &middot; {formatDuration(rec.duration)} &middot; {formatFileSize(rec.fileSize)}
-                  </div>
-                  {rec.tags && rec.tags.length > 0 && (
-                    <div style={{ display: 'flex', gap: 3, marginTop: 4, flexWrap: 'wrap' }}>
-                      {rec.tags.map(t => (
-                        <span key={t} style={{
-                          padding: '1px 6px',
-                          background: 'rgba(59, 130, 246, 0.12)',
-                          color: 'var(--accent-blue)',
-                          borderRadius: 8,
-                          fontSize: 10,
-                        }}>{t}</span>
-                      ))}
+              <div className="recording-list">
+                {group.recordings.map(rec => (
+                  <div
+                    key={rec.id}
+                    className="recording-item"
+                    onClick={() => selectRecording(rec)}
+                    style={{
+                      borderColor: selectedRecording?.id === rec.id ? 'var(--accent-blue)' : undefined,
+                      position: 'relative',
+                    }}
+                  >
+                    <div className="recording-item-info">
+                      <div className="recording-item-title">{rec.title || 'Untitled Recording'}</div>
+                      <div className="recording-item-meta">
+                        {new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &middot; {formatDuration(rec.duration)} &middot; {formatFileSize(rec.fileSize)}
+                      </div>
+                      {rec.tags && rec.tags.length > 0 && (
+                        <div style={{ display: 'flex', gap: 3, marginTop: 4, flexWrap: 'wrap' }}>
+                          {rec.tags.map(t => (
+                            <span key={t} style={{
+                              padding: '1px 6px',
+                              background: 'rgba(59, 130, 246, 0.12)',
+                              color: 'var(--accent-blue)',
+                              borderRadius: 8,
+                              fontSize: 10,
+                            }}>{t}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <span className={`status-badge ${rec.status}`}>{getStatusLabel(rec.status)}</span>
+                    <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', gap: 5, alignItems: 'center' }}>
+                      {/* Transcript icon */}
+                      <StatusIcon
+                        ready={['transcribed', 'generating', 'complete'].includes(rec.status)}
+                        activeColor="var(--accent-blue)"
+                        tooltip={
+                          rec.status === 'transcribing' ? 'Transcribing...'
+                          : ['transcribed', 'generating', 'complete'].includes(rec.status) ? 'Transcript ready'
+                          : 'Not yet transcribed'
+                        }
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                          <polyline points="14 2 14 8 20 8" />
+                          <line x1="16" y1="13" x2="8" y2="13" />
+                          <line x1="16" y1="17" x2="8" y2="17" />
+                        </svg>
+                      </StatusIcon>
+                      {/* Notes icon */}
+                      <StatusIcon
+                        ready={rec.status === 'complete'}
+                        activeColor="var(--accent-green)"
+                        tooltip={
+                          rec.status === 'generating' ? 'Generating notes...'
+                          : rec.status === 'complete' ? 'Notes ready'
+                          : 'Notes not generated'
+                        }
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                        </svg>
+                      </StatusIcon>
+                      {(rec.status === 'transcribing' || rec.status === 'generating') && (
+                        <div className="pipeline-spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          ))}
           </div>
         </div>
 
         {/* Detail Panel */}
-        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           {!selectedRecording ? (
             <div className="card" style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
               Select a recording to view details
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
-              {/* Header card */}
-              <div className="card">
-                <h2 style={{ fontSize: 18, marginBottom: 4 }}>
-                  {selectedRecording.title || 'Untitled Recording'}
-                </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+              {/* Header card — fixed at top */}
+              <div className="card" style={{ flexShrink: 0, marginBottom: 12 }}>
+                {isEditingTitle ? (
+                  <input
+                    ref={titleInputRef}
+                    value={editTitle}
+                    onChange={e => setEditTitle(e.target.value)}
+                    onBlur={saveTitle}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') saveTitle();
+                      if (e.key === 'Escape') setIsEditingTitle(false);
+                    }}
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 600,
+                      marginBottom: 4,
+                      background: 'var(--bg-input)',
+                      border: '1px solid var(--accent-blue)',
+                      borderRadius: 'var(--radius)',
+                      color: 'var(--text-primary)',
+                      padding: '2px 8px',
+                      width: '100%',
+                      outline: 'none',
+                    }}
+                  />
+                ) : (
+                  <h2
+                    style={{ fontSize: 18, marginBottom: 4, cursor: 'pointer' }}
+                    onClick={startEditingTitle}
+                    title="Click to edit title"
+                  >
+                    {selectedRecording.title || 'Untitled Recording'}
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>&#9998;</span>
+                  </h2>
+                )}
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
                   {new Date(selectedRecording.date).toLocaleString()} &middot;{' '}
                   {formatDuration(selectedRecording.duration)} &middot;{' '}
                   {formatFileSize(selectedRecording.fileSize)}
+                  {selectedRecording.transcriptionCost && (
+                    <> &middot; <span style={{ color: 'var(--accent-yellow)' }}>${selectedRecording.transcriptionCost.estimatedCost.toFixed(4)}</span></>
+                  )}
                   <span className={`status-badge ${selectedRecording.status}`} style={{ marginLeft: 12 }}>
                     {getStatusLabel(selectedRecording.status)}
                   </span>
@@ -379,17 +515,19 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                 </div>
               </div>
 
-              {/* Audio Player */}
+              {/* Audio Player — pinned */}
               {selectedRecording.audioPath && (
-                <AudioPlayer
-                  isPlaying={audioState.isPlaying}
-                  currentTime={audioState.currentTime}
-                  duration={audioState.duration}
-                  playbackRate={audioState.playbackRate}
-                  onToggle={audioControls.toggle}
-                  onSeek={audioControls.seek}
-                  onRateChange={audioControls.setRate}
-                />
+                <div style={{ flexShrink: 0, marginBottom: 12 }}>
+                  <AudioPlayer
+                    isPlaying={audioState.isPlaying}
+                    currentTime={audioState.currentTime}
+                    duration={audioState.duration}
+                    playbackRate={audioState.playbackRate}
+                    onToggle={audioControls.toggle}
+                    onSeek={audioControls.seek}
+                    onRateChange={audioControls.setRate}
+                  />
+                </div>
               )}
 
               {/* Transcription progress */}
@@ -412,9 +550,9 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                 </div>
               )}
 
-              {/* Tab bar for Notes / Transcript */}
+              {/* Tab bar for Notes / Transcript — pinned */}
               {(selectedRecording.status === 'transcribed' || selectedRecording.status === 'complete' || selectedRecording.status === 'generating') && (
-                <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-color)', flexShrink: 0, paddingLeft: 12 }}>
                   <button
                     onClick={() => setDetailTab('notes')}
                     style={{
@@ -450,7 +588,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
 
               {/* Notes tab */}
               {detailTab === 'notes' && (isStreaming || isLoadingNotes || notesContent || selectedRecording.status === 'complete') && (
-                <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
                   <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 8 }}>
                     Meeting Notes
                     {isStreaming && <span style={{ color: 'var(--accent-yellow)', marginLeft: 8 }}>(generating...)</span>}
@@ -480,7 +618,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
 
               {/* Transcript tab */}
               {detailTab === 'transcript' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
                   {utterances.length > 0 ? (
                     <TranscriptViewer
                       utterances={utterances}
@@ -509,5 +647,49 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
       {/* Toast */}
       {toastMessage && <div className="toast">{toastMessage}</div>}
     </>
+  );
+}
+
+function StatusIcon({ ready, activeColor, tooltip, children }: {
+  ready: boolean;
+  activeColor: string;
+  tooltip: string;
+  children: React.ReactNode;
+}) {
+  const [showTooltip, setShowTooltip] = React.useState(false);
+  return (
+    <span
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+      style={{
+        position: 'relative',
+        display: 'inline-flex',
+        color: ready ? activeColor : 'var(--text-muted)',
+        opacity: ready ? 1 : 0.25,
+        cursor: 'default',
+      }}
+    >
+      {children}
+      {showTooltip && (
+        <span style={{
+          position: 'absolute',
+          bottom: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          marginBottom: 4,
+          padding: '3px 8px',
+          background: 'var(--bg-primary)',
+          border: '1px solid var(--border-color)',
+          borderRadius: 4,
+          fontSize: 10,
+          color: 'var(--text-secondary)',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          zIndex: 10,
+        }}>
+          {tooltip}
+        </span>
+      )}
+    </span>
   );
 }
