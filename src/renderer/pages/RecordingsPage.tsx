@@ -1,9 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Recording } from '../types';
+import TagEditor from '../components/TagEditor';
+import ExportMenu from '../components/ExportMenu';
+import TranscriptViewer from '../components/TranscriptViewer';
+import AudioPlayer from '../components/AudioPlayer';
+import { useAudioPlayer } from '../hooks/useAudioPlayer';
 
 interface RecordingsPageProps {
   initialRecordingId?: string | null;
 }
+
+type DetailTab = 'notes' | 'transcript';
 
 export default function RecordingsPage({ initialRecordingId }: RecordingsPageProps) {
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -13,14 +20,19 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   const [transcriptionStatus, setTranscriptionStatus] = useState('');
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
-  const [transcriptText, setTranscriptText] = useState('');
   const [toastMessage, setToastMessage] = useState('');
+  const [detailTab, setDetailTab] = useState<DetailTab>('notes');
+  const [utterances, setUtterances] = useState<any[]>([]);
+  const [allTags, setAllTags] = useState<string[]>([]);
+  const [filterTag, setFilterTag] = useState<string | null>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [audioState, audioControls] = useAudioPlayer();
 
   useEffect(() => {
     loadRecordings();
+    loadAllTags();
 
-    // Listen for transcription progress
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
       const { status, message } = data as { status: string; message: string };
       setTranscriptionStatus(message);
@@ -43,13 +55,10 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     };
   }, []);
 
-  // Auto-select recording if navigated from RecordPage
   useEffect(() => {
     if (initialRecordingId && recordings.length > 0) {
       const rec = recordings.find(r => r.id === initialRecordingId);
-      if (rec) {
-        selectRecording(rec);
-      }
+      if (rec) selectRecording(rec);
     }
   }, [initialRecordingId, recordings]);
 
@@ -57,9 +66,14 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     try {
       const list = await window.meetingMind.getRecordings();
       setRecordings(list);
-    } catch {
-      console.error('Failed to load recordings');
-    }
+    } catch {}
+  }
+
+  async function loadAllTags() {
+    try {
+      const tags = await window.meetingMind.getAllTags();
+      setAllTags(tags);
+    } catch {}
   }
 
   async function refreshSelectedRecording() {
@@ -67,31 +81,49 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     const updated = await window.meetingMind.getRecording(selectedRecording.id);
     if (updated) {
       setSelectedRecording(updated);
-      // Also refresh list
       loadRecordings();
+      loadAllTags();
     }
   }
 
   async function selectRecording(rec: Recording) {
     setSelectedRecording(rec);
     setNotesContent('');
-    setTranscriptText('');
+    setUtterances([]);
     setTranscriptionStatus('');
     setIsStreaming(false);
     setIsLoadingNotes(false);
+    setDetailTab('notes');
 
-    // Refresh recording data
     const freshRec = await window.meetingMind.getRecording(rec.id);
     if (freshRec) {
       setSelectedRecording(freshRec);
 
-      // Load saved notes if recording is complete
-      if (freshRec.status === 'complete') {
+      if (freshRec.status === 'complete' || freshRec.status === 'transcribed') {
         const notes = await window.meetingMind.getNotes(freshRec.id);
-        if (notes) {
-          setNotesContent(notes);
-        }
+        if (notes) setNotesContent(notes);
       }
+
+      // Load transcript data
+      if (freshRec.status === 'transcribed' || freshRec.status === 'complete' || freshRec.status === 'generating') {
+        const transcriptData = await window.meetingMind.getTranscript(freshRec.id);
+        setUtterances(transcriptData || []);
+      }
+
+      // Load audio for the player
+      if (freshRec.audioPath) {
+        audioControls.load(`media://${freshRec.audioPath}`);
+      }
+    }
+  }
+
+  async function loadTranscript() {
+    if (!selectedRecording) return;
+    try {
+      const data = await window.meetingMind.getTranscript(selectedRecording.id);
+      setUtterances(data || []);
+    } catch {
+      setUtterances([]);
     }
   }
 
@@ -99,13 +131,11 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     if (!selectedRecording) return;
     setIsTranscribing(true);
     setTranscriptionStatus('Starting transcription...');
-
     const result = await window.meetingMind.startTranscription(selectedRecording.id);
     if (!result.success) {
       setIsTranscribing(false);
       setTranscriptionStatus(`Failed: ${result.error}`);
     }
-    // Progress updates come via IPC events
   }
 
   async function handleGenerateNotes() {
@@ -114,7 +144,6 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     setIsStreaming(true);
     setIsLoadingNotes(true);
 
-    // Clean up old listeners
     window.meetingMind.removeAllListeners('notes:stream');
     window.meetingMind.removeAllListeners('notes:complete');
 
@@ -143,13 +172,9 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     const dateStr = new Date(selectedRecording.date).toISOString().slice(0, 10);
     const title = selectedRecording.title || 'Untitled Meeting';
     const filename = `${dateStr} - ${title}.md`;
-
     const result = await window.meetingMind.saveNotes(selectedRecording.id, filename);
-    if (result.success) {
-      showToast(`Saved to ${result.path}`);
-    } else {
-      showToast(`Save failed: ${result.error}`);
-    }
+    if (result.success) showToast(`Saved to ${result.path}`);
+    else showToast(`Save failed: ${result.error}`);
   }
 
   async function handleSaveToObsidian() {
@@ -157,13 +182,9 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     const dateStr = new Date(selectedRecording.date).toISOString().slice(0, 10);
     const title = selectedRecording.title || 'Untitled Meeting';
     const filename = `${dateStr} - ${title}.md`;
-
     const result = await window.meetingMind.saveToObsidian(selectedRecording.id, filename);
-    if (result.success) {
-      showToast('Saved to Obsidian vault!');
-    } else {
-      showToast(`Save failed: ${result.error}`);
-    }
+    if (result.success) showToast('Saved to Obsidian vault!');
+    else showToast(`Save failed: ${result.error}`);
   }
 
   async function handleDeleteRecording() {
@@ -174,6 +195,20 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
       loadRecordings();
       showToast('Recording deleted');
     }
+  }
+
+  async function handleTagsChange(tags: string[]) {
+    if (!selectedRecording) return;
+    await window.meetingMind.setRecordingTags(selectedRecording.id, tags);
+    setSelectedRecording({ ...selectedRecording, tags });
+    loadRecordings();
+    loadAllTags();
+  }
+
+  async function handleRenameSpeaker(oldName: string, newName: string) {
+    if (!selectedRecording) return;
+    await window.meetingMind.renameSpeaker(selectedRecording.id, oldName, newName);
+    refreshSelectedRecording();
   }
 
   function showToast(msg: string) {
@@ -203,6 +238,11 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     }
   }
 
+  // Filter recordings by tag
+  const filteredRecordings = filterTag
+    ? recordings.filter(r => r.tags?.includes(filterTag))
+    : recordings;
+
   return (
     <>
       <div className="page-header">
@@ -211,18 +251,38 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
       <div className="page-content" style={{ display: 'flex', gap: 20, height: 'calc(100vh - 112px)' }}>
         {/* List */}
         <div style={{ flex: '0 0 340px', overflowY: 'auto' }}>
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <button className="btn btn-ghost" onClick={loadRecordings} style={{ fontSize: 12, padding: '4px 8px' }}>
               Refresh
             </button>
+
+            {/* Tag filter dropdown */}
+            {allTags.length > 0 && (
+              <select
+                value={filterTag || ''}
+                onChange={e => setFilterTag(e.target.value || null)}
+                style={{
+                  background: 'var(--bg-input)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius)',
+                  color: 'var(--text-secondary)',
+                  fontSize: 11,
+                  padding: '4px 8px',
+                }}
+              >
+                <option value="">All tags</option>
+                {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
           </div>
+
           <div className="recording-list">
-            {recordings.length === 0 && (
+            {filteredRecordings.length === 0 && (
               <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                No recordings yet. Start a recording to get started.
+                {filterTag ? 'No recordings with this tag.' : 'No recordings yet. Start a recording to get started.'}
               </div>
             )}
-            {recordings.map(rec => (
+            {filteredRecordings.map(rec => (
               <div
                 key={rec.id}
                 className="recording-item"
@@ -236,6 +296,19 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                   <div className="recording-item-meta">
                     {new Date(rec.date).toLocaleDateString()} &middot; {formatDuration(rec.duration)} &middot; {formatFileSize(rec.fileSize)}
                   </div>
+                  {rec.tags && rec.tags.length > 0 && (
+                    <div style={{ display: 'flex', gap: 3, marginTop: 4, flexWrap: 'wrap' }}>
+                      {rec.tags.map(t => (
+                        <span key={t} style={{
+                          padding: '1px 6px',
+                          background: 'rgba(59, 130, 246, 0.12)',
+                          color: 'var(--accent-blue)',
+                          borderRadius: 8,
+                          fontSize: 10,
+                        }}>{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <span className={`status-badge ${rec.status}`}>{getStatusLabel(rec.status)}</span>
               </div>
@@ -244,19 +317,19 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
         </div>
 
         {/* Detail Panel */}
-        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+        <div style={{ flex: 1, minWidth: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
           {!selectedRecording ? (
             <div className="card" style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
               Select a recording to view details
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, flex: 1 }}>
               {/* Header card */}
               <div className="card">
                 <h2 style={{ fontSize: 18, marginBottom: 4 }}>
                   {selectedRecording.title || 'Untitled Recording'}
                 </h2>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
                   {new Date(selectedRecording.date).toLocaleString()} &middot;{' '}
                   {formatDuration(selectedRecording.duration)} &middot;{' '}
                   {formatFileSize(selectedRecording.fileSize)}
@@ -265,58 +338,58 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                   </span>
                 </div>
 
+                {/* Tags */}
+                <div style={{ marginBottom: 12 }}>
+                  <TagEditor
+                    tags={selectedRecording.tags || []}
+                    allTags={allTags}
+                    onChange={handleTagsChange}
+                  />
+                </div>
+
                 {/* Action buttons */}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {selectedRecording.status === 'recorded' && (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleTranscribe}
-                      disabled={isTranscribing}
-                    >
+                    <button className="btn btn-primary" onClick={handleTranscribe} disabled={isTranscribing}>
                       {isTranscribing ? 'Transcribing...' : 'Transcribe'}
                     </button>
                   )}
                   {selectedRecording.status === 'transcribed' && (
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleGenerateNotes}
-                      disabled={isStreaming}
-                    >
+                    <button className="btn btn-primary" onClick={handleGenerateNotes} disabled={isStreaming}>
                       {isStreaming ? 'Generating...' : 'Generate Notes'}
                     </button>
                   )}
                   {selectedRecording.status === 'complete' && (
                     <>
-                      <button className="btn btn-primary" onClick={handleSaveNotes}>
-                        Save Notes
-                      </button>
-                      <button className="btn btn-secondary" onClick={handleSaveToObsidian}>
-                        Save to Obsidian
-                      </button>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={handleGenerateNotes}
-                        disabled={isStreaming}
-                      >
+                      <button className="btn btn-primary" onClick={handleSaveNotes}>Save Notes</button>
+                      <button className="btn btn-secondary" onClick={handleSaveToObsidian}>Save to Obsidian</button>
+                      <ExportMenu recordingId={selectedRecording.id} onToast={showToast} />
+                      <button className="btn btn-secondary" onClick={handleGenerateNotes} disabled={isStreaming}>
                         Regenerate
                       </button>
                     </>
                   )}
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => window.meetingMind.openInFinder(selectedRecording.audioPath)}
-                  >
+                  <button className="btn btn-ghost" onClick={() => window.meetingMind.openInFinder(selectedRecording.audioPath)}>
                     Open in Finder
                   </button>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={handleDeleteRecording}
-                    style={{ color: 'var(--accent-primary)' }}
-                  >
+                  <button className="btn btn-ghost" onClick={handleDeleteRecording} style={{ color: 'var(--accent-primary)' }}>
                     Delete
                   </button>
                 </div>
               </div>
+
+              {/* Audio Player */}
+              {selectedRecording.audioPath && (
+                <AudioPlayer
+                  isPlaying={audioState.isPlaying}
+                  currentTime={audioState.currentTime}
+                  duration={audioState.duration}
+                  playbackRate={audioState.playbackRate}
+                  onToggle={audioControls.toggle}
+                  onSeek={audioControls.seek}
+                  onRateChange={audioControls.setRate}
+                />
+              )}
 
               {/* Transcription progress */}
               {isTranscribing && (
@@ -334,15 +407,49 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
               {!isTranscribing && transcriptionStatus && transcriptionStatus.startsWith('Error') && (
                 <div className="card" style={{ borderColor: 'rgba(231, 76, 60, 0.3)' }}>
                   <div style={{ color: 'var(--accent-primary)', fontSize: 13 }}>{transcriptionStatus}</div>
-                  <button className="btn btn-secondary" onClick={handleTranscribe} style={{ marginTop: 8 }}>
-                    Retry
+                  <button className="btn btn-secondary" onClick={handleTranscribe} style={{ marginTop: 8 }}>Retry</button>
+                </div>
+              )}
+
+              {/* Tab bar for Notes / Transcript */}
+              {(selectedRecording.status === 'transcribed' || selectedRecording.status === 'complete' || selectedRecording.status === 'generating') && (
+                <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-color)' }}>
+                  <button
+                    onClick={() => setDetailTab('notes')}
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: 13,
+                      fontWeight: 500,
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: detailTab === 'notes' ? '2px solid var(--accent-blue)' : '2px solid transparent',
+                      color: detailTab === 'notes' ? 'var(--text-primary)' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Notes
+                  </button>
+                  <button
+                    onClick={() => setDetailTab('transcript')}
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: 13,
+                      fontWeight: 500,
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: detailTab === 'transcript' ? '2px solid var(--accent-blue)' : '2px solid transparent',
+                      color: detailTab === 'transcript' ? 'var(--text-primary)' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Transcript
                   </button>
                 </div>
               )}
 
-              {/* Notes — streaming or completed */}
-              {(isStreaming || isLoadingNotes || notesContent || selectedRecording.status === 'complete') && (
-                <div className="card">
+              {/* Notes tab */}
+              {detailTab === 'notes' && (isStreaming || isLoadingNotes || notesContent || selectedRecording.status === 'complete') && (
+                <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                   <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 8 }}>
                     Meeting Notes
                     {isStreaming && <span style={{ color: 'var(--accent-yellow)', marginLeft: 8 }}>(generating...)</span>}
@@ -357,11 +464,35 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                       background: 'var(--bg-input)',
                       padding: 16,
                       borderRadius: 'var(--radius)',
-                      maxHeight: 500,
+                      flex: 1,
                       overflowY: 'auto',
                       whiteSpace: 'pre-wrap',
                     }}>
                       {notesContent || 'Notes will appear here after generation.'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Transcript tab */}
+              {detailTab === 'transcript' && (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                  {utterances.length > 0 ? (
+                    <TranscriptViewer
+                      utterances={utterances}
+                      currentTime={audioState.currentTime}
+                      speakerNames={selectedRecording.speakerNames || {}}
+                      onSeek={audioControls.seek}
+                      onRenameSpeaker={handleRenameSpeaker}
+                    />
+                  ) : (
+                    <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                      <div style={{ fontSize: 13 }}>
+                        Transcript viewer requires utterance-level data from AssemblyAI.
+                      </div>
+                      <div style={{ fontSize: 12, marginTop: 4 }}>
+                        The raw transcript text is available in the Notes tab after generation.
+                      </div>
                     </div>
                   )}
                 </div>
@@ -372,9 +503,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
       </div>
 
       {/* Toast */}
-      {toastMessage && (
-        <div className="toast">{toastMessage}</div>
-      )}
+      {toastMessage && <div className="toast">{toastMessage}</div>}
     </>
   );
 }

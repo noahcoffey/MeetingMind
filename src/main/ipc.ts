@@ -15,6 +15,11 @@ import {
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, saveNotes, saveToObsidian } from './notes-generator';
 import { getCalendarEvents, invalidateCalendarCache, connectGoogle, connectMicrosoft, disconnectCalendar } from './calendar';
+import { listSystemAudioDevices } from './system-audio';
+import { copyNotesToClipboard, exportNotesAsPDF, emailNotes } from './export';
+import { searchRecordings } from './search';
+import { setTags, getAllTags } from './tagger';
+import { getAnalyticsStats, generateTrendInsights } from './analytics';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -91,9 +96,13 @@ export function setupIpcHandlers(): void {
     return []; // Handled in renderer via navigator.mediaDevices
   });
 
+  ipcMain.handle('audio:getSystemDevices', async () => {
+    return listSystemAudioDevices();
+  });
+
   // Recording handlers
-  ipcMain.handle('recording:start', async (_event, deviceId?: string) => {
-    return startRecording(deviceId || 'default');
+  ipcMain.handle('recording:start', async (_event, deviceId?: string, systemAudioDeviceId?: string) => {
+    return startRecording(deviceId || 'default', systemAudioDeviceId);
   });
 
   ipcMain.handle('recording:stop', async () => {
@@ -172,6 +181,19 @@ export function setupIpcHandlers(): void {
     return disconnectCalendar(provider);
   });
 
+  // Export
+  ipcMain.handle('export:clipboard', async (_event, recordingId: string) => {
+    return copyNotesToClipboard(recordingId);
+  });
+
+  ipcMain.handle('export:pdf', async (_event, recordingId: string) => {
+    return exportNotesAsPDF(recordingId);
+  });
+
+  ipcMain.handle('export:email', async (_event, recordingId: string) => {
+    return emailNotes(recordingId);
+  });
+
   // Speaker renaming
   ipcMain.handle('speakers:rename', async (_event, recordingId: string, oldName: string, newName: string) => {
     const recording = getRecording(recordingId);
@@ -189,6 +211,44 @@ export function setupIpcHandlers(): void {
     }
 
     return { success: false, error: 'Manifest not found' };
+  });
+
+  // Transcript data (utterances for transcript viewer)
+  ipcMain.handle('transcription:getTranscript', async (_event, recordingId: string) => {
+    const recording = getRecording(recordingId);
+    if (!recording) return null;
+    const outputDir = path.dirname(recording.audioPath);
+    const transcriptPath = path.join(outputDir, 'transcript.json');
+    if (fs.existsSync(transcriptPath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(transcriptPath, 'utf-8'));
+        return data.utterances || [];
+      } catch { return []; }
+    }
+    return [];
+  });
+
+  // Search
+  ipcMain.handle('search:query', async (_event, query: string) => {
+    return searchRecordings(query);
+  });
+
+  // Tags
+  ipcMain.handle('recordings:setTags', async (_event, recordingId: string, tags: string[]) => {
+    return setTags(recordingId, tags);
+  });
+
+  ipcMain.handle('recordings:getAllTags', async () => {
+    return getAllTags();
+  });
+
+  // Analytics
+  ipcMain.handle('analytics:getStats', async () => {
+    return getAnalyticsStats();
+  });
+
+  ipcMain.handle('analytics:getTrends', async () => {
+    return generateTrendInsights();
   });
 
   log('info', 'IPC handlers registered');

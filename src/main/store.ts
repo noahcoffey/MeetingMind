@@ -16,6 +16,9 @@ export interface AppSettings {
   googleCalendarEnabled: boolean;
   microsoftCalendarEnabled: boolean;
   onboardingComplete: boolean;
+  globalHotkey: string;
+  globalHotkeyPause: string;
+  showTrayIcon: boolean;
 }
 
 const defaults: AppSettings = {
@@ -34,6 +37,9 @@ const defaults: AppSettings = {
   googleCalendarEnabled: false,
   microsoftCalendarEnabled: false,
   onboardingComplete: false,
+  globalHotkey: 'CommandOrControl+Shift+R',
+  globalHotkeyPause: 'CommandOrControl+Shift+P',
+  showTrayIcon: true,
 };
 
 let store: Store<AppSettings>;

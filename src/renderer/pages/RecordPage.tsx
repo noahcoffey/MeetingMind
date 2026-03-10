@@ -13,6 +13,8 @@ export default function RecordPage({ onRecordingComplete }: RecordPageProps) {
   const [audioLevel, setAudioLevel] = useState(0);
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState('default');
+  const [systemAudioDevices, setSystemAudioDevices] = useState<any[]>([]);
+  const [selectedSystemDevice, setSelectedSystemDevice] = useState('');
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [meetingTitle, setMeetingTitle] = useState('');
@@ -38,6 +40,7 @@ export default function RecordPage({ onRecordingComplete }: RecordPageProps) {
 
   useEffect(() => {
     loadDevices();
+    loadSystemAudioDevices();
     loadCalendarEvents();
     setupListeners();
 
@@ -64,6 +67,13 @@ export default function RecordPage({ onRecordingComplete }: RecordPageProps) {
     } catch {
       console.error('Failed to enumerate devices');
     }
+  }
+
+  async function loadSystemAudioDevices() {
+    try {
+      const devs = await window.meetingMind.getSystemAudioDevices();
+      setSystemAudioDevices(devs);
+    } catch {}
   }
 
   async function loadCalendarEvents(bypassCache = false) {
@@ -245,7 +255,7 @@ export default function RecordPage({ onRecordingComplete }: RecordPageProps) {
       pausedDurationRef.current = 0;
       pauseStartRef.current = 0;
 
-      const result = await window.meetingMind.startRecording(selectedDevice);
+      const result = await window.meetingMind.startRecording(selectedDevice, selectedSystemDevice || undefined);
       if (result.success) {
         startTimeRef.current = Date.now();
         timerRef.current = setInterval(() => {
@@ -415,6 +425,29 @@ export default function RecordPage({ onRecordingComplete }: RecordPageProps) {
                 ))}
                 {devices.length === 0 && <option value="default">Default Microphone</option>}
               </select>
+            </div>
+          )}
+
+          {/* System Audio Device */}
+          {(stage === 'idle' || stage === 'recording') && systemAudioDevices.length > 0 && (
+            <div style={{ width: '100%', maxWidth: 500 }}>
+              <label className="form-label">System Audio (Optional)</label>
+              <select
+                className="form-select"
+                value={selectedSystemDevice}
+                onChange={e => setSelectedSystemDevice(e.target.value)}
+                disabled={stage === 'recording'}
+              >
+                <option value="">None — mic only</option>
+                {systemAudioDevices.map(d => (
+                  <option key={d.index} value={String(d.index)}>
+                    {d.name}{d.isVirtual ? ' (virtual)' : ''}
+                  </option>
+                ))}
+              </select>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+                Select a virtual audio device (e.g. BlackHole) to capture system audio from Zoom/Teams/Meet.
+              </div>
             </div>
           )}
 

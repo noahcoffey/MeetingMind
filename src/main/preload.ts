@@ -12,9 +12,10 @@ const api = {
 
   // Audio devices
   getAudioDevices: () => ipcRenderer.invoke('audio:getDevices'),
+  getSystemAudioDevices: () => ipcRenderer.invoke('audio:getSystemDevices'),
 
   // Recording
-  startRecording: (deviceId?: string) => ipcRenderer.invoke('recording:start', deviceId),
+  startRecording: (deviceId?: string, systemAudioDeviceId?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId),
   stopRecording: () => ipcRenderer.invoke('recording:stop'),
   cancelRecording: () => ipcRenderer.invoke('recording:cancel'),
   pauseRecording: () => ipcRenderer.invoke('recording:pause'),
@@ -29,6 +30,9 @@ const api = {
   // Transcription
   startTranscription: (recordingId: string) => ipcRenderer.invoke('transcription:start', recordingId),
   getTranscriptionStatus: (recordingId: string) => ipcRenderer.invoke('transcription:status', recordingId),
+
+  // Transcript data
+  getTranscript: (recordingId: string) => ipcRenderer.invoke('transcription:getTranscript', recordingId),
 
   // Notes generation
   generateNotes: (recordingId: string) => ipcRenderer.invoke('notes:generate', recordingId),
@@ -45,6 +49,22 @@ const api = {
   // Speaker renaming
   renameSpeaker: (recordingId: string, oldName: string, newName: string) =>
     ipcRenderer.invoke('speakers:rename', recordingId, oldName, newName),
+
+  // Export
+  copyNotesToClipboard: (recordingId: string) => ipcRenderer.invoke('export:clipboard', recordingId),
+  exportAsPDF: (recordingId: string) => ipcRenderer.invoke('export:pdf', recordingId),
+  emailNotes: (recordingId: string) => ipcRenderer.invoke('export:email', recordingId),
+
+  // Search
+  searchRecordings: (query: string) => ipcRenderer.invoke('search:query', query),
+
+  // Tags
+  setRecordingTags: (recordingId: string, tags: string[]) => ipcRenderer.invoke('recordings:setTags', recordingId, tags),
+  getAllTags: () => ipcRenderer.invoke('recordings:getAllTags'),
+
+  // Analytics
+  getAnalyticsStats: () => ipcRenderer.invoke('analytics:getStats'),
+  getTrendInsights: () => ipcRenderer.invoke('analytics:getTrends'),
 
   // File operations
   openInFinder: (filePath: string) => ipcRenderer.invoke('file:openInFinder', filePath),

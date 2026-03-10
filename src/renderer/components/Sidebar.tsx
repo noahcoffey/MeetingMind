@@ -1,16 +1,20 @@
 import React from 'react';
+import SearchBar from './SearchBar';
 
-type Page = 'record' | 'recordings' | 'settings';
+type Page = 'record' | 'recordings' | 'settings' | 'analytics';
 
 interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
+  onSearchSelect: (recordingId: string) => void;
 }
 
-export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
+export default function Sidebar({ currentPage, onNavigate, onSearchSelect }: SidebarProps) {
   return (
     <div className="sidebar">
       <nav className="sidebar-nav">
+        <SearchBar onSelectResult={onSearchSelect} />
+
         <button
           className={`sidebar-item ${currentPage === 'record' ? 'active' : ''}`}
           onClick={() => onNavigate('record')}
@@ -30,6 +34,18 @@ export default function Sidebar({ currentPage, onNavigate }: SidebarProps) {
             <path d="M3 12h4l3-9 4 18 3-9h4" />
           </svg>
           Recordings
+        </button>
+
+        <button
+          className={`sidebar-item ${currentPage === 'analytics' ? 'active' : ''}`}
+          onClick={() => onNavigate('analytics')}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+          Analytics
         </button>
 
         <button

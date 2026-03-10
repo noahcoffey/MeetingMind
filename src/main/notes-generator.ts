@@ -7,6 +7,7 @@ import { spawn } from 'child_process';
 import { log } from './logger';
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
+import { autoTagRecording } from './tagger';
 
 const DEFAULT_PROMPT = `You are a professional meeting notes assistant. Based on the transcript and context below, generate structured meeting notes in Markdown format.
 
@@ -259,6 +260,11 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
 
     updateRecordingStatus(recordingId, 'complete');
     sendToRenderer('notes:complete', { recordingId, notes: fullNotes });
+
+    // Fire-and-forget auto-tagging
+    autoTagRecording(recordingId).catch((err: any) => {
+      log('warn', 'Auto-tagging failed (non-blocking)', { recordingId, error: err.message });
+    });
 
     log('info', 'Notes generated successfully', { recordingId, provider });
     return { success: true };

@@ -20,6 +20,7 @@ interface ActiveRecording {
   chunkIndex: number;
   chunks: string[];
   inputDevice: string;
+  systemAudioDevice: string;
   ffmpegProcess: ChildProcess | null;
   manifestInterval: ReturnType<typeof setInterval> | null;
   diskCheckInterval: ReturnType<typeof setInterval> | null;
@@ -54,7 +55,7 @@ function getOutputDir(): string {
   return customDir || path.join(os.homedir(), 'Documents', 'MeetingMind', 'recordings');
 }
 
-export function startRecording(deviceId: string, calendarEventId?: string, userContext?: string, title?: string): { success: boolean; sessionId?: string; error?: string } {
+export function startRecording(deviceId: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string): { success: boolean; sessionId?: string; error?: string } {
   if (activeRecording) {
     return { success: false, error: 'Recording already in progress' };
   }
@@ -70,6 +71,7 @@ export function startRecording(deviceId: string, calendarEventId?: string, userC
     chunkIndex: 0,
     chunks: [],
     inputDevice: deviceId,
+    systemAudioDevice: systemAudioDeviceId || '',
     ffmpegProcess: null,
     manifestInterval: null,
     diskCheckInterval: null,
@@ -87,14 +89,18 @@ export function startRecording(deviceId: string, calendarEventId?: string, userC
   startChunk();
 
   // Start manifest writing
-  activeRecording.manifestInterval = setInterval(() => {
-    writeManifest();
-  }, MANIFEST_INTERVAL_MS);
+  if (activeRecording) {
+    activeRecording.manifestInterval = setInterval(() => {
+      writeManifest();
+    }, MANIFEST_INTERVAL_MS);
+  }
 
   // Start disk space monitoring
-  activeRecording.diskCheckInterval = setInterval(() => {
-    checkDiskSpace();
-  }, DISK_CHECK_INTERVAL_MS);
+  if (activeRecording) {
+    activeRecording.diskCheckInterval = setInterval(() => {
+      checkDiskSpace();
+    }, DISK_CHECK_INTERVAL_MS);
+  }
 
   return { success: true, sessionId };
 }
@@ -108,15 +114,36 @@ function startChunk(): void {
 
   // Build ffmpeg command to record from input device
   // On macOS, use avfoundation to capture audio
-  const args = [
-    '-f', 'avfoundation',
-    '-i', `:${activeRecording.inputDevice === 'default' ? '0' : activeRecording.inputDevice}`,
-    '-ac', '1',           // mono
-    '-ar', '44100',       // 44.1kHz
-    '-t', String(CHUNK_DURATION_SEC), // chunk duration
-    '-y',                 // overwrite
-    chunkPath,
-  ];
+  const micDeviceId = activeRecording.inputDevice === 'default' ? '0' : activeRecording.inputDevice;
+  const systemDeviceId = activeRecording.systemAudioDevice;
+
+  let args: string[];
+  if (systemDeviceId) {
+    // Dual-input ffmpeg for mic + system audio
+    args = [
+      '-f', 'avfoundation',
+      '-i', `:${micDeviceId}`,
+      '-f', 'avfoundation',
+      '-i', `:${systemDeviceId}`,
+      '-filter_complex', '[0:a][1:a]amix=inputs=2:duration=longest',
+      '-ac', '1',
+      '-ar', '44100',
+      '-t', String(CHUNK_DURATION_SEC),
+      '-y',
+      chunkPath,
+    ];
+  } else {
+    // Single-input (mic only)
+    args = [
+      '-f', 'avfoundation',
+      '-i', `:${micDeviceId}`,
+      '-ac', '1',           // mono
+      '-ar', '44100',       // 44.1kHz
+      '-t', String(CHUNK_DURATION_SEC), // chunk duration
+      '-y',                 // overwrite
+      chunkPath,
+    ];
+  }
 
   log('info', `Starting chunk ${chunkName}`, { args });
 
