@@ -49,6 +49,21 @@ describe('store', () => {
     expect(getSetting('notesProvider')).toBe('cli');
   });
 
+  test('transcriptionProvider defaults to assemblyai', () => {
+    expect(getSetting('transcriptionProvider')).toBe('assemblyai');
+  });
+
+  test('setSetting handles transcriptionProvider enum', () => {
+    setSetting('transcriptionProvider', 'openai-whisper');
+    expect(getSetting('transcriptionProvider')).toBe('openai-whisper');
+
+    setSetting('transcriptionProvider', 'deepgram');
+    expect(getSetting('transcriptionProvider')).toBe('deepgram');
+
+    setSetting('transcriptionProvider', 'assemblyai');
+    expect(getSetting('transcriptionProvider')).toBe('assemblyai');
+  });
+
   test('getStore returns the store instance', () => {
     const store = getStore();
     expect(store).toBeDefined();

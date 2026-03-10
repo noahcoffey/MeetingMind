@@ -7,6 +7,7 @@ export interface AppSettings {
   obsidianVaultPath: string;
   obsidianSubfolder: string;
   obsidianDailyNotesFolder: string;
+  transcriptionProvider: 'assemblyai' | 'openai-whisper' | 'deepgram';
   notesProvider: 'cli' | 'api';
   claudeModel: string;
   notesPromptTemplate: string;
@@ -29,6 +30,7 @@ const defaults: AppSettings = {
   obsidianVaultPath: '',
   obsidianSubfolder: 'Meeting Notes',
   obsidianDailyNotesFolder: '',
+  transcriptionProvider: 'assemblyai',
   notesProvider: 'cli',
   claudeModel: 'claude-sonnet-4-20250514',
   notesPromptTemplate: '',

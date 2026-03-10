@@ -45,8 +45,12 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [assemblyAiKey, setAssemblyAiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [deepgramKey, setDeepgramKey] = useState('');
   const [hasAssemblyKey, setHasAssemblyKey] = useState(false);
   const [hasAnthropicKey, setHasAnthropicKey] = useState(false);
+  const [hasOpenaiKey, setHasOpenaiKey] = useState(false);
+  const [hasDeepgramKey, setHasDeepgramKey] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -63,6 +67,12 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
 
       const antKey = await window.meetingMind.getApiKey('anthropic');
       setHasAnthropicKey(!!antKey);
+
+      const oaiKey = await window.meetingMind.getApiKey('openai');
+      setHasOpenaiKey(!!oaiKey);
+
+      const dgKey = await window.meetingMind.getApiKey('deepgram');
+      setHasDeepgramKey(!!dgKey);
     } catch {
       console.error('Failed to load settings');
     }
@@ -85,6 +95,16 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
       setHasAnthropicKey(true);
       setAnthropicKey('');
     }
+    if (openaiKey) {
+      await window.meetingMind.setApiKey('openai', openaiKey);
+      setHasOpenaiKey(true);
+      setOpenaiKey('');
+    }
+    if (deepgramKey) {
+      await window.meetingMind.setApiKey('deepgram', deepgramKey);
+      setHasDeepgramKey(true);
+      setDeepgramKey('');
+    }
 
     onSettingsChange();
     setSaved(true);
@@ -105,23 +125,81 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
       <div className="page-header">
         <h1>Settings</h1>
       </div>
-      <div className="page-content" style={{ maxWidth: 600 }}>
+      <div className="page-content">
+
+        {/* Transcription Provider */}
+        <div className="settings-section">
+          <h2>Transcription</h2>
+          <div className="form-group">
+            <label className="form-label">Provider</label>
+            <select
+              className="form-select"
+              value={settings.transcriptionProvider || 'assemblyai'}
+              onChange={e => updateSetting('transcriptionProvider', e.target.value)}
+            >
+              <option value="assemblyai">AssemblyAI — $0.17/hr (speaker diarization)</option>
+              <option value="openai-whisper">OpenAI Whisper — $0.36/hr (no speaker ID)</option>
+              <option value="deepgram">Deepgram Nova-2 — $0.26/hr (speaker diarization)</option>
+            </select>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              {(settings.transcriptionProvider || 'assemblyai') === 'assemblyai' && 'High accuracy with speaker identification. Processes asynchronously.'}
+              {settings.transcriptionProvider === 'openai-whisper' && 'Great accuracy, no speaker diarization. 25MB file size limit per request.'}
+              {settings.transcriptionProvider === 'deepgram' && 'Fast processing with speaker identification. Real-time capable.'}
+            </div>
+          </div>
+        </div>
 
         {/* API Keys */}
         <div className="settings-section">
           <h2>API Keys</h2>
-          <div className="form-group">
-            <label className="form-label">
-              AssemblyAI API Key {hasAssemblyKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
-            </label>
-            <input
-              type="password"
-              className="form-input"
-              placeholder={hasAssemblyKey ? '••••••••••••••' : 'Enter your AssemblyAI API key'}
-              value={assemblyAiKey}
-              onChange={e => setAssemblyAiKey(e.target.value)}
-            />
-          </div>
+
+          {/* Show key field for current transcription provider */}
+          {(settings.transcriptionProvider || 'assemblyai') === 'assemblyai' && (
+            <div className="form-group">
+              <label className="form-label">
+                AssemblyAI API Key {hasAssemblyKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
+              </label>
+              <input
+                type="password"
+                className="form-input"
+                placeholder={hasAssemblyKey ? '••••••••••••••' : 'Enter your AssemblyAI API key'}
+                value={assemblyAiKey}
+                onChange={e => setAssemblyAiKey(e.target.value)}
+              />
+            </div>
+          )}
+
+          {settings.transcriptionProvider === 'openai-whisper' && (
+            <div className="form-group">
+              <label className="form-label">
+                OpenAI API Key {hasOpenaiKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
+              </label>
+              <input
+                type="password"
+                className="form-input"
+                placeholder={hasOpenaiKey ? '••••••••••••••' : 'Enter your OpenAI API key'}
+                value={openaiKey}
+                onChange={e => setOpenaiKey(e.target.value)}
+              />
+            </div>
+          )}
+
+          {settings.transcriptionProvider === 'deepgram' && (
+            <div className="form-group">
+              <label className="form-label">
+                Deepgram API Key {hasDeepgramKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
+              </label>
+              <input
+                type="password"
+                className="form-input"
+                placeholder={hasDeepgramKey ? '••••••••••••••' : 'Enter your Deepgram API key'}
+                value={deepgramKey}
+                onChange={e => setDeepgramKey(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Anthropic key — only needed for API-based notes generation */}
           {(settings.notesProvider || 'cli') === 'api' && (
             <div className="form-group">
               <label className="form-label">
