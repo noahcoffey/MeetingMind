@@ -32,6 +32,7 @@ export interface MeetingMindAPI {
   connectGoogleCalendar: () => Promise<{ success: boolean; error?: string }>;
   connectMicrosoftCalendar: () => Promise<{ success: boolean; error?: string }>;
   disconnectCalendar: (provider: string) => Promise<{ success: boolean }>;
+  renameRecording: (recordingId: string, newTitle: string) => Promise<{ success: boolean; error?: string }>;
   renameSpeaker: (recordingId: string, oldName: string, newName: string) => Promise<{ success: boolean }>;
   copyNotesToClipboard: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
   exportAsPDF: (recordingId: string) => Promise<{ success: boolean; path?: string; error?: string }>;
@@ -60,6 +61,14 @@ export interface Recording {
   userContext?: string;
   speakerNames?: Record<string, string>;
   tags?: string[];
+  transcriptionCost?: {
+    provider?: string;
+    audioDurationSeconds: number;
+    audioDurationHours: number;
+    costPerHour: number;
+    estimatedCost: number;
+    timestamp: string;
+  };
 }
 
 export interface CalendarEvent {

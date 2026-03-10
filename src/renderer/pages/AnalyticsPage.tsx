@@ -10,6 +10,9 @@ interface AnalyticsStats {
   longestMeeting: { id: string; title: string; duration: number } | null;
   shortestMeeting: { id: string; title: string; duration: number } | null;
   recentTrend: 'increasing' | 'decreasing' | 'stable';
+  totalTranscriptionCost: number;
+  averageTranscriptionCost: number;
+  transcriptionCostPerWeek: { week: string; cost: number }[];
 }
 
 function formatDuration(seconds: number): string {
@@ -80,6 +83,8 @@ export default function AnalyticsPage() {
 
   const maxWeekdayCount = Math.max(...stats.meetingsPerWeekday, 1);
   const maxWeekCount = Math.max(...stats.meetingsPerWeek.map(w => w.count), 1);
+  const maxWeekCost = Math.max(...stats.transcriptionCostPerWeek.map(w => w.cost), 0.01);
+  const hasCostData = stats.totalTranscriptionCost > 0;
 
   const trendIcon = stats.recentTrend === 'increasing' ? '↑' : stats.recentTrend === 'decreasing' ? '↓' : '→';
   const trendColor = stats.recentTrend === 'increasing' ? 'var(--accent-green)' : stats.recentTrend === 'decreasing' ? 'var(--accent-primary)' : 'var(--text-muted)';
@@ -87,7 +92,7 @@ export default function AnalyticsPage() {
   return (
     <>
       <div className="page-header"><h1>Analytics</h1></div>
-      <div className="page-content" style={{ maxWidth: 800 }}>
+      <div className="page-content">
 
         {/* Stat Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 24 }}>
@@ -205,6 +210,55 @@ export default function AnalyticsPage() {
             )}
           </div>
         </div>
+
+        {/* Transcription Cost */}
+        {hasCostData && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
+              <StatCard label="Total Spend" value={`$${stats.totalTranscriptionCost.toFixed(2)}`} valueColor="var(--accent-yellow)" />
+              <StatCard label="Avg / Meeting" value={`$${stats.averageTranscriptionCost.toFixed(2)}`} />
+              <StatCard
+                label="Est. Monthly"
+                value={`$${(stats.transcriptionCostPerWeek.slice(-4).reduce((s, w) => s + w.cost, 0)).toFixed(2)}`}
+                valueColor="var(--text-secondary)"
+              />
+            </div>
+
+            <div className="card" style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16 }}>Weekly Transcription Spend</h3>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 80 }}>
+                {stats.transcriptionCostPerWeek.map((w, i) => (
+                  <div
+                    key={i}
+                    title={`${w.week}: $${w.cost.toFixed(2)}`}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div style={{
+                      width: '100%',
+                      height: `${Math.max(2, (w.cost / maxWeekCost) * 60)}px`,
+                      background: w.cost > 0 ? 'var(--accent-yellow)' : 'var(--border-color)',
+                      borderRadius: '3px 3px 0 0',
+                      transition: 'height 300ms ease',
+                    }} />
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>
+                  {stats.transcriptionCostPerWeek.length > 0 ? stats.transcriptionCostPerWeek[0].week : ''}
+                </span>
+                <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>
+                  {stats.transcriptionCostPerWeek.length > 0 ? stats.transcriptionCostPerWeek[stats.transcriptionCostPerWeek.length - 1].week : ''}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* AI Trend Insights */}
         <div className="card">

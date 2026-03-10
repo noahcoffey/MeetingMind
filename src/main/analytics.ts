@@ -17,6 +17,9 @@ export interface AnalyticsStats {
   longestMeeting: { id: string; title: string; duration: number } | null;
   shortestMeeting: { id: string; title: string; duration: number } | null;
   recentTrend: 'increasing' | 'decreasing' | 'stable';
+  totalTranscriptionCost: number;
+  averageTranscriptionCost: number;
+  transcriptionCostPerWeek: { week: string; cost: number }[];
 }
 
 function getOutputDir(): string {
@@ -49,12 +52,17 @@ export function getAnalyticsStats(): AnalyticsStats {
     longestMeeting: null,
     shortestMeeting: null,
     recentTrend: 'stable',
+    totalTranscriptionCost: 0,
+    averageTranscriptionCost: 0,
+    transcriptionCostPerWeek: [],
   };
 
   if (recordings.length === 0) return stats;
 
   // Compute total/avg duration
   let totalDuration = 0;
+  let totalCost = 0;
+  let costCount = 0;
   const tagCounts: Record<string, number> = {};
 
   for (const rec of recordings) {
@@ -74,6 +82,12 @@ export function getAnalyticsStats(): AnalyticsStats {
           tagCounts[tag] = (tagCounts[tag] || 0) + 1;
         }
       }
+    }
+
+    // Transcription cost
+    if ((rec as any).transcriptionCost?.estimatedCost) {
+      totalCost += (rec as any).transcriptionCost.estimatedCost;
+      costCount++;
     }
 
     // Longest/shortest
@@ -141,6 +155,32 @@ export function getAnalyticsStats(): AnalyticsStats {
     else if (ratio < 0.8) stats.recentTrend = 'decreasing';
     else stats.recentTrend = 'stable';
   }
+
+  // Transcription cost totals
+  stats.totalTranscriptionCost = totalCost;
+  stats.averageTranscriptionCost = costCount > 0 ? totalCost / costCount : 0;
+
+  // Cost per week (reuse week buckets)
+  const costBuckets: Record<string, number> = {};
+  for (const b of weekBuckets) costBuckets[b.week] = 0;
+
+  for (const rec of recordings) {
+    if ((rec as any).transcriptionCost?.estimatedCost) {
+      try {
+        const recDate = new Date(rec.date);
+        const recMonday = getMonday(recDate);
+        const weekLabel = formatWeekLabel(recMonday);
+        if (weekLabel in costBuckets) {
+          costBuckets[weekLabel] += (rec as any).transcriptionCost.estimatedCost;
+        }
+      } catch {}
+    }
+  }
+
+  stats.transcriptionCostPerWeek = weekBuckets.map(b => ({
+    week: b.week,
+    cost: Math.round(costBuckets[b.week] * 100) / 100,
+  }));
 
   return stats;
 }

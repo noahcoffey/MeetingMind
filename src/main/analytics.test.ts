@@ -120,4 +120,60 @@ describe('getAnalyticsStats', () => {
     const stats = getAnalyticsStats();
     expect(stats.longestMeeting?.title).toBe('Untitled');
   });
+
+  test('returns zero cost stats when no transcription cost data', () => {
+    mockListRecordings.mockReturnValue([
+      { id: '1', title: 'A', date: '2025-06-10T10:00:00Z', duration: 600 },
+    ]);
+
+    const stats = getAnalyticsStats();
+    expect(stats.totalTranscriptionCost).toBe(0);
+    expect(stats.averageTranscriptionCost).toBe(0);
+    expect(stats.transcriptionCostPerWeek).toHaveLength(12);
+    expect(stats.transcriptionCostPerWeek.every(w => w.cost === 0)).toBe(true);
+  });
+
+  test('calculates total and average transcription cost', () => {
+    mockListRecordings.mockReturnValue([
+      {
+        id: '1', title: 'A', date: new Date().toISOString(), duration: 1800,
+        transcriptionCost: { estimatedCost: 0.085 },
+      },
+      {
+        id: '2', title: 'B', date: new Date().toISOString(), duration: 3600,
+        transcriptionCost: { estimatedCost: 0.17 },
+      },
+      {
+        id: '3', title: 'C', date: new Date().toISOString(), duration: 600,
+      },
+    ]);
+
+    const stats = getAnalyticsStats();
+    expect(stats.totalTranscriptionCost).toBeCloseTo(0.255, 3);
+    expect(stats.averageTranscriptionCost).toBeCloseTo(0.1275, 3);
+  });
+
+  test('buckets transcription cost per week', () => {
+    const now = new Date();
+    mockListRecordings.mockReturnValue([
+      {
+        id: '1', title: 'A', date: now.toISOString(), duration: 3600,
+        transcriptionCost: { estimatedCost: 0.17 },
+      },
+    ]);
+
+    const stats = getAnalyticsStats();
+    // The last week bucket should have the cost
+    const lastWeek = stats.transcriptionCostPerWeek[stats.transcriptionCostPerWeek.length - 1];
+    expect(lastWeek.cost).toBeGreaterThan(0);
+  });
+
+  test('zero cost stats when no recordings', () => {
+    mockListRecordings.mockReturnValue([]);
+
+    const stats = getAnalyticsStats();
+    expect(stats.totalTranscriptionCost).toBe(0);
+    expect(stats.averageTranscriptionCost).toBe(0);
+    expect(stats.transcriptionCostPerWeek).toEqual([]);
+  });
 });
