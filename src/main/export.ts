@@ -7,7 +7,7 @@ import { getRecording } from './recording-manager';
 /**
  * Convert a subset of markdown to HTML for PDF rendering.
  */
-function markdownToHtml(md: string): string {
+export function markdownToHtml(md: string): string {
   const lines = md.split('\n');
   const htmlLines: string[] = [];
   let inUl = false;
