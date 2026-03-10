@@ -266,6 +266,23 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
       log('warn', 'Auto-tagging failed (non-blocking)', { recordingId, error: err.message });
     });
 
+    // Auto-save to Obsidian if enabled
+    if (getSetting('autoSaveToObsidian') && getSetting('obsidianVaultPath')) {
+      try {
+        const dateStr = new Date(recording.date).toISOString().slice(0, 10);
+        const title = recording.title || recording.calendarEvent?.title || 'Untitled Meeting';
+        const filename = `${dateStr} - ${title}.md`;
+        const obsidianResult = await saveToObsidian(recordingId, filename);
+        if (obsidianResult.success) {
+          log('info', 'Auto-saved notes to Obsidian', { recordingId, filename });
+        } else {
+          log('warn', 'Auto-save to Obsidian failed', { recordingId, error: obsidianResult.error });
+        }
+      } catch (err: any) {
+        log('warn', 'Auto-save to Obsidian error', { recordingId, error: err.message });
+      }
+    }
+
     log('info', 'Notes generated successfully', { recordingId, provider });
     return { success: true };
   } catch (err: any) {

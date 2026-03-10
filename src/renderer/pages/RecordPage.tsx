@@ -223,18 +223,22 @@ export default function RecordPage({ onRecordingComplete }: RecordPageProps) {
 
         const settings = await window.meetingMind.getSettings();
         if (settings.autoTranscribe) {
-          setStage('transcribing');
-          setPipelineMessage('Uploading audio to AssemblyAI for transcription...');
+          // Run transcription + notes in background so user can start a new recording
+          setStage('complete');
+          setPipelineMessage('Recording saved! Transcription running in background...');
 
-          const transcribeResult = await window.meetingMind.startTranscription(result.recordingId);
-          if (transcribeResult.success) {
-            setPipelineMessage('Generating meeting notes with Claude...');
-            setStage('generating-notes');
-            await window.meetingMind.generateNotes(result.recordingId);
-          } else {
-            setStage('complete');
-            setPipelineMessage(`Recording saved. Transcription failed: ${transcribeResult.error}`);
-          }
+          // Fire-and-forget background pipeline
+          const recordingId = result.recordingId;
+          (async () => {
+            try {
+              const transcribeResult = await window.meetingMind.startTranscription(recordingId);
+              if (transcribeResult.success) {
+                await window.meetingMind.generateNotes(recordingId);
+              }
+            } catch (err) {
+              console.error('Background pipeline error:', err);
+            }
+          })();
         } else {
           setStage('complete');
           setPipelineMessage('Recording saved successfully!');
@@ -255,7 +259,13 @@ export default function RecordPage({ onRecordingComplete }: RecordPageProps) {
       pausedDurationRef.current = 0;
       pauseStartRef.current = 0;
 
-      const result = await window.meetingMind.startRecording(selectedDevice, selectedSystemDevice || undefined);
+      const result = await window.meetingMind.startRecording(
+        selectedDevice,
+        selectedSystemDevice || undefined,
+        selectedEvent?.id,
+        userContext || undefined,
+        meetingTitle || undefined,
+      );
       if (result.success) {
         startTimeRef.current = Date.now();
         timerRef.current = setInterval(() => {

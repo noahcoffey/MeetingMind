@@ -51,10 +51,14 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
   const load = useCallback((src: string) => {
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.removeAttribute('src');
+      audioRef.current.load();
       cancelAnimationFrame(animRef.current);
     }
 
-    const audio = new Audio(src);
+    // Create via DOM so Electron's protocol handler can intercept the request
+    const audio = document.createElement('audio');
+    audio.preload = 'metadata';
     audioRef.current = audio;
 
     audio.addEventListener('loadedmetadata', () => {
@@ -75,6 +79,13 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
       setState(prev => ({ ...prev, isPlaying: true }));
       animRef.current = requestAnimationFrame(tick);
     });
+
+    audio.addEventListener('error', () => {
+      console.error('Audio load error:', audio.error?.message, 'src:', src);
+      setState(prev => ({ ...prev, isPlaying: false, duration: 0 }));
+    });
+
+    audio.src = src;
   }, [tick]);
 
   const play = useCallback(() => { audioRef.current?.play(); }, []);

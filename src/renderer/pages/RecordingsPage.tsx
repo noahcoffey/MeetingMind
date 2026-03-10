@@ -5,6 +5,7 @@ import ExportMenu from '../components/ExportMenu';
 import TranscriptViewer from '../components/TranscriptViewer';
 import AudioPlayer from '../components/AudioPlayer';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
+import MarkdownRenderer from '../components/MarkdownRenderer';
 
 interface RecordingsPageProps {
   initialRecordingId?: string | null;
@@ -460,15 +461,18 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                       <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Sending transcript to Claude...</div>
                     </div>
                   ) : (
-                    <div className="markdown-content" style={{
+                    <div style={{
                       background: 'var(--bg-input)',
                       padding: 16,
                       borderRadius: 'var(--radius)',
                       flex: 1,
                       overflowY: 'auto',
-                      whiteSpace: 'pre-wrap',
                     }}>
-                      {notesContent || 'Notes will appear here after generation.'}
+                      {notesContent ? (
+                        <MarkdownRenderer content={notesContent} />
+                      ) : (
+                        <div style={{ color: 'var(--text-muted)' }}>Notes will appear here after generation.</div>
+                      )}
                     </div>
                   )}
                 </div>

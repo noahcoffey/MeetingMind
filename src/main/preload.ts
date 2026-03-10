@@ -15,7 +15,7 @@ const api = {
   getSystemAudioDevices: () => ipcRenderer.invoke('audio:getSystemDevices'),
 
   // Recording
-  startRecording: (deviceId?: string, systemAudioDeviceId?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId),
+  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId, calendarEventId, userContext, title),
   stopRecording: () => ipcRenderer.invoke('recording:stop'),
   cancelRecording: () => ipcRenderer.invoke('recording:cancel'),
   pauseRecording: () => ipcRenderer.invoke('recording:pause'),

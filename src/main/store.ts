@@ -16,6 +16,7 @@ export interface AppSettings {
   googleCalendarEnabled: boolean;
   microsoftCalendarEnabled: boolean;
   onboardingComplete: boolean;
+  autoSaveToObsidian: boolean;
   globalHotkey: string;
   globalHotkeyPause: string;
   showTrayIcon: boolean;
@@ -37,6 +38,7 @@ const defaults: AppSettings = {
   googleCalendarEnabled: false,
   microsoftCalendarEnabled: false,
   onboardingComplete: false,
+  autoSaveToObsidian: false,
   globalHotkey: 'CommandOrControl+Shift+R',
   globalHotkeyPause: 'CommandOrControl+Shift+P',
   showTrayIcon: true,

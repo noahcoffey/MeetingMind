@@ -12,7 +12,7 @@ export interface MeetingMindAPI {
   deleteApiKey: (service: string) => Promise<boolean>;
   getAudioDevices: () => Promise<MediaDeviceInfo[]>;
   getSystemAudioDevices: () => Promise<AudioDevice[]>;
-  startRecording: (deviceId?: string, systemAudioDeviceId?: string) => Promise<{ success: boolean; error?: string }>;
+  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string) => Promise<{ success: boolean; error?: string }>;
   stopRecording: () => Promise<{ success: boolean; error?: string; recordingId?: string }>;
   cancelRecording: () => Promise<{ success: boolean; error?: string }>;
   pauseRecording: () => Promise<{ success: boolean; error?: string }>;

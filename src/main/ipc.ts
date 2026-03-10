@@ -101,8 +101,8 @@ export function setupIpcHandlers(): void {
   });
 
   // Recording handlers
-  ipcMain.handle('recording:start', async (_event, deviceId?: string, systemAudioDeviceId?: string) => {
-    return startRecording(deviceId || 'default', systemAudioDeviceId);
+  ipcMain.handle('recording:start', async (_event, deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string) => {
+    return startRecording(deviceId || 'default', systemAudioDeviceId, calendarEventId, userContext, title);
   });
 
   ipcMain.handle('recording:stop', async () => {

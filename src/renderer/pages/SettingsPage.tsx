@@ -235,6 +235,19 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
               onChange={e => updateSetting('obsidianDailyNotesFolder', e.target.value)}
             />
           </div>
+          <div className="form-group">
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={settings.autoSaveToObsidian || false}
+                onChange={e => updateSetting('autoSaveToObsidian', e.target.checked)}
+              />
+              Auto-save notes to Obsidian after generation
+            </label>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              Automatically saves meeting notes to your vault when note generation completes. Requires a vault path above.
+            </div>
+          </div>
         </div>
 
         {/* Calendar */}

@@ -7,6 +7,21 @@ import { checkCrashRecovery } from './recorder';
 import { createTray, destroyTray, updateTray } from './tray';
 import { getRecordingStatus, startRecording, stopRecording, pauseRecording, resumeRecording } from './recording-manager';
 
+// Register media:// as a privileged scheme before app ready
+// so audio/video elements can load from it
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'media',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true,
+    },
+  },
+]);
+
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow(): void {
