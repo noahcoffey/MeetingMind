@@ -9,6 +9,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [step, setStep] = useState(0);
   const [assemblyAiKey, setAssemblyAiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
+  const [notesProvider, setNotesProvider] = useState<'cli' | 'api'>('cli');
   const [keyError, setKeyError] = useState('');
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState('default');
@@ -37,13 +38,20 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   async function handleSaveKeys() {
     setKeyError('');
-    if (!assemblyAiKey || !anthropicKey) {
-      setKeyError('Both API keys are required.');
+    if (!assemblyAiKey) {
+      setKeyError('AssemblyAI API key is required for transcription.');
+      return;
+    }
+    if (notesProvider === 'api' && !anthropicKey) {
+      setKeyError('Anthropic API key is required when using API mode.');
       return;
     }
 
     await window.meetingMind.setApiKey('assemblyai', assemblyAiKey);
-    await window.meetingMind.setApiKey('anthropic', anthropicKey);
+    if (anthropicKey) {
+      await window.meetingMind.setApiKey('anthropic', anthropicKey);
+    }
+    await window.meetingMind.setSetting('notesProvider', notesProvider);
     setStep(1);
   }
 
@@ -143,7 +151,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
           <div>
             <h1 style={{ fontSize: 24, marginBottom: 8 }}>Welcome to MeetingMind</h1>
             <p style={{ color: 'var(--text-secondary)', marginBottom: 24, fontSize: 14 }}>
-              Enter your API keys to get started. You'll need accounts with AssemblyAI and Anthropic.
+              Set up your transcription and notes generation to get started.
             </p>
 
             <div className="form-group">
@@ -163,22 +171,49 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
               </a>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Anthropic API Key</label>
-              <input
-                type="password"
-                className="form-input"
-                value={anthropicKey}
-                onChange={e => setAnthropicKey(e.target.value)}
-                placeholder="Enter your key"
-              />
-              <a
-                href="#"
-                style={{ fontSize: 12, color: 'var(--accent-blue)', display: 'inline-block', marginTop: 4 }}
-              >
-                Get a key at console.anthropic.com
-              </a>
+            <div className="form-group" style={{ marginTop: 20 }}>
+              <label className="form-label">Notes Generation</label>
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button
+                  className={`btn ${notesProvider === 'cli' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setNotesProvider('cli')}
+                >
+                  Claude Code CLI
+                </button>
+                <button
+                  className={`btn ${notesProvider === 'api' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setNotesProvider('api')}
+                >
+                  Anthropic API
+                </button>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                {notesProvider === 'cli'
+                  ? 'Uses your Claude Code subscription — no per-call costs. Requires the claude CLI to be installed.'
+                  : 'Uses the Anthropic API with your own key — pay per token.'}
+              </p>
             </div>
+
+            {notesProvider === 'api' && (
+              <div className="form-group">
+                <label className="form-label">Anthropic API Key</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  value={anthropicKey}
+                  onChange={e => setAnthropicKey(e.target.value)}
+                  placeholder="Enter your key"
+                />
+                <a
+                  href="#"
+                  style={{ fontSize: 12, color: 'var(--accent-blue)', display: 'inline-block', marginTop: 4 }}
+                >
+                  Get a key at console.anthropic.com
+                </a>
+              </div>
+            )}
 
             {keyError && (
               <div style={{ color: 'var(--accent-primary)', fontSize: 13, marginBottom: 12 }}>{keyError}</div>
