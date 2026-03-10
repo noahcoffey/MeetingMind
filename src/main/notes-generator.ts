@@ -101,6 +101,15 @@ function buildPrompt(recording: any, transcript: string): string {
     .replace(/\{\{suggested_title\}\}/g, eventTitle);
 }
 
+// Sanitize filename for Obsidian and filesystem compatibility
+// Removes: \ / : * ? " < > | # ^ [ ]
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>|#^\[\]]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Untitled Meeting';
+}
+
 function sendToRenderer(channel: string, data: unknown): void {
   const windows = BrowserWindow.getAllWindows();
   for (const win of windows) {
@@ -270,7 +279,7 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
     if (getSetting('autoSaveToObsidian') && getSetting('obsidianVaultPath')) {
       try {
         const dateStr = new Date(recording.date).toISOString().slice(0, 10);
-        const title = recording.title || recording.calendarEvent?.title || 'Untitled Meeting';
+        const title = sanitizeFilename(recording.title || recording.calendarEvent?.title || 'Untitled Meeting');
         const filename = `${dateStr} - ${title}.md`;
         const obsidianResult = await saveToObsidian(recordingId, filename);
         if (obsidianResult.success) {
@@ -378,7 +387,8 @@ export async function saveNotes(recordingId: string, filename: string): Promise<
   );
   fs.mkdirSync(notesOutputDir, { recursive: true });
 
-  const savePath = path.join(notesOutputDir, filename);
+  const safeFilename = sanitizeFilename(filename.replace(/\.md$/, '')) + '.md';
+  const savePath = path.join(notesOutputDir, safeFilename);
   fs.copyFileSync(notesPath, savePath);
 
   return { success: true, path: savePath };
@@ -399,10 +409,11 @@ export async function saveToObsidian(recordingId: string, filename: string): Pro
     return { success: false, error: 'Notes not found' };
   }
 
+  const safeFilename = sanitizeFilename(filename.replace(/\.md$/, '')) + '.md';
   const obsidianDir = path.join(vaultPath, subfolder);
   fs.mkdirSync(obsidianDir, { recursive: true });
 
-  const savePath = path.join(obsidianDir, filename);
+  const savePath = path.join(obsidianDir, safeFilename);
 
   if (fs.existsSync(savePath)) {
     log('warn', 'Overwriting existing Obsidian note', { savePath });
@@ -420,7 +431,7 @@ export async function saveToObsidian(recordingId: string, filename: string): Pro
 
   if (fs.existsSync(dailyNotePath)) {
     let dailyContent = fs.readFileSync(dailyNotePath, 'utf-8');
-    const noteLink = `- [[${subfolder}/${filename.replace('.md', '')}]]`;
+    const noteLink = `- [[${subfolder}/${safeFilename.replace('.md', '')}]]`;
 
     if (!dailyContent.includes(noteLink)) {
       if (dailyContent.includes('## Meetings')) {

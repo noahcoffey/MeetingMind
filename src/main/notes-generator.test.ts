@@ -208,6 +208,53 @@ describe('saveToObsidian', () => {
   });
 });
 
+describe('saveNotes filename sanitization', () => {
+  let tempDir: string;
+  let outputDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sanitize-'));
+    outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-output-'));
+    jest.clearAllMocks();
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'recordingOutputFolder') return outputDir as any;
+      return '' as any;
+    });
+    mockGetRecording.mockReturnValue({
+      id: 'rec-1',
+      audioPath: path.join(tempDir, 'audio.m4a'),
+    });
+    fs.writeFileSync(path.join(tempDir, 'notes.md'), '# Test');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  test('strips Obsidian-incompatible characters from filename', async () => {
+    const result = await saveNotes('rec-1', 'Meeting: Q1 Review / Plan [Draft] #1.md');
+    expect(result.success).toBe(true);
+    // Filename portion should not contain : / [ ] #
+    const filename = path.basename(result.path!);
+    expect(filename).not.toMatch(/[:*?"<>|#^\[\]]/);
+    expect(fs.existsSync(result.path!)).toBe(true);
+  });
+
+  test('handles filename that is all special characters', async () => {
+    const result = await saveNotes('rec-1', ':/[]#.md');
+    expect(result.success).toBe(true);
+    // Should fall back to "Untitled Meeting"
+    expect(result.path).toContain('Untitled Meeting.md');
+  });
+
+  test('collapses multiple spaces in filename', async () => {
+    const result = await saveNotes('rec-1', 'Meeting   with   spaces.md');
+    expect(result.success).toBe(true);
+    expect(result.path).toContain('Meeting with spaces.md');
+  });
+});
+
 describe('generateNotes', () => {
   test('returns error when recording not found', async () => {
     mockGetRecording.mockReturnValue(null);
