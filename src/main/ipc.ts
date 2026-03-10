@@ -213,6 +213,24 @@ export function setupIpcHandlers(): void {
     return { success: false, error: 'Manifest not found' };
   });
 
+  // Rename recording title
+  ipcMain.handle('recordings:renameTitle', async (_event, recordingId: string, newTitle: string) => {
+    const recording = getRecording(recordingId);
+    if (!recording) return { success: false, error: 'Recording not found' };
+
+    const outputDir = path.dirname(recording.audioPath);
+    const manifestPath = path.join(outputDir, 'manifest.json');
+
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      manifest.title = newTitle;
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+      return { success: true };
+    }
+
+    return { success: false, error: 'Manifest not found' };
+  });
+
   // Transcript data (utterances for transcript viewer)
   ipcMain.handle('transcription:getTranscript', async (_event, recordingId: string) => {
     const recording = getRecording(recordingId);

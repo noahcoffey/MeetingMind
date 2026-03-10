@@ -34,6 +34,9 @@ const api = {
   // Transcript data
   getTranscript: (recordingId: string) => ipcRenderer.invoke('transcription:getTranscript', recordingId),
 
+  // Rename recording title
+  renameRecording: (recordingId: string, newTitle: string) => ipcRenderer.invoke('recordings:renameTitle', recordingId, newTitle),
+
   // Notes generation
   generateNotes: (recordingId: string) => ipcRenderer.invoke('notes:generate', recordingId),
   getNotes: (recordingId: string) => ipcRenderer.invoke('notes:get', recordingId),
