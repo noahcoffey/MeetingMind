@@ -45,6 +45,9 @@ export interface MeetingMindAPI {
   getTrendInsights: () => Promise<string>;
   getHighlightsPreview: (startDate: string, endDate: string) => Promise<HighlightsPreview>;
   generateHighlights: (startDate: string, endDate: string) => Promise<{ success: boolean; report?: string; error?: string; meetingCount?: number }>;
+  listSavedHighlights: () => Promise<SavedHighlight[]>;
+  getSavedHighlight: (id: string) => Promise<string | null>;
+  deleteSavedHighlight: (id: string) => Promise<boolean>;
   openInFinder: (filePath: string) => Promise<void>;
   openInObsidian: (vaultName: string, filePath: string) => Promise<void>;
   selectFolder: () => Promise<string | null>;
@@ -118,6 +121,14 @@ export interface HighlightsPreview {
   withNotes: number;
   withoutNotes: number;
   meetings: { title: string; date: string; hasNotes: boolean }[];
+}
+
+export interface SavedHighlight {
+  id: string;
+  startDate: string;
+  endDate: string;
+  label: string;
+  createdAt: string;
 }
 
 declare global {

@@ -81,6 +81,9 @@ const api = {
     ipcRenderer.invoke('highlights:preview', startDate, endDate),
   generateHighlights: (startDate: string, endDate: string) =>
     ipcRenderer.invoke('highlights:generate', startDate, endDate),
+  listSavedHighlights: () => ipcRenderer.invoke('highlights:list'),
+  getSavedHighlight: (id: string) => ipcRenderer.invoke('highlights:get', id),
+  deleteSavedHighlight: (id: string) => ipcRenderer.invoke('highlights:delete', id),
 
   // Event listeners
   on: (channel: string, callback: (...args: unknown[]) => void) => {

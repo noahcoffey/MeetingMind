@@ -20,7 +20,7 @@ import { copyNotesToClipboard, exportNotesAsPDF, emailNotes } from './export';
 import { searchRecordings } from './search';
 import { setTags, getAllTags } from './tagger';
 import { getAnalyticsStats, generateTrendInsights } from './analytics';
-import { generateWeeklyHighlights, getHighlightsPreview } from './weekly-highlights';
+import { generateWeeklyHighlights, getHighlightsPreview, listSavedHighlights, getSavedHighlight, deleteSavedHighlight } from './weekly-highlights';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -293,6 +293,18 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('highlights:generate', async (_event, startDate: string, endDate: string) => {
     return generateWeeklyHighlights(startDate, endDate);
+  });
+
+  ipcMain.handle('highlights:list', async () => {
+    return listSavedHighlights();
+  });
+
+  ipcMain.handle('highlights:get', async (_event, id: string) => {
+    return getSavedHighlight(id);
+  });
+
+  ipcMain.handle('highlights:delete', async (_event, id: string) => {
+    return deleteSavedHighlight(id);
   });
 
   log('info', 'IPC handlers registered');

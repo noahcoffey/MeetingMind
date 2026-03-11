@@ -325,6 +325,70 @@ export async function generateWeeklyHighlights(
   }
 }
 
+export interface SavedHighlight {
+  id: string;
+  startDate: string;
+  endDate: string;
+  label: string;
+  createdAt: string;
+}
+
+function getHighlightsDir(): string {
+  const outputDir = getSetting('recordingOutputFolder') || path.join(os.homedir(), 'Documents', 'MeetingMind');
+  return path.join(outputDir, 'highlights');
+}
+
+export function listSavedHighlights(): SavedHighlight[] {
+  const dir = getHighlightsDir();
+  if (!fs.existsSync(dir)) return [];
+
+  const files = fs.readdirSync(dir).filter(f => f.startsWith('highlights-') && f.endsWith('.md'));
+  const results: SavedHighlight[] = [];
+
+  for (const file of files) {
+    const match = file.match(/^highlights-(\d{4}-\d{2}-\d{2})-to-(\d{4}-\d{2}-\d{2})\.md$/);
+    if (!match) continue;
+
+    const [, startDate, endDate] = match;
+    const filePath = path.join(dir, file);
+    const stat = fs.statSync(filePath);
+
+    const startLabel = new Date(startDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endLabel = new Date(endDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    results.push({
+      id: file.replace('.md', ''),
+      startDate,
+      endDate,
+      label: `${startLabel} – ${endLabel}`,
+      createdAt: stat.mtime.toISOString(),
+    });
+  }
+
+  return results.sort((a, b) => b.startDate.localeCompare(a.startDate));
+}
+
+export function getSavedHighlight(id: string): string | null {
+  const filePath = path.join(getHighlightsDir(), `${id}.md`);
+  if (!fs.existsSync(filePath)) return null;
+  try {
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+export function deleteSavedHighlight(id: string): boolean {
+  const filePath = path.join(getHighlightsDir(), `${id}.md`);
+  if (!fs.existsSync(filePath)) return false;
+  try {
+    fs.unlinkSync(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function getHighlightsPreview(
   startDate: string,
   endDate: string
