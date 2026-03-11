@@ -29,6 +29,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   const [filterTag, setFilterTag] = useState<string | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -196,6 +197,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     if (!selectedRecording) return;
     const result = await window.meetingMind.deleteRecording(selectedRecording.id);
     if (result.success) {
+      setShowDeleteConfirm(false);
       setSelectedRecording(null);
       loadRecordings();
       showToast('Recording deleted');
@@ -509,7 +511,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                   <button className="btn btn-ghost" onClick={() => window.meetingMind.openInFinder(selectedRecording.audioPath)}>
                     Open in Finder
                   </button>
-                  <button className="btn btn-ghost" onClick={handleDeleteRecording} style={{ color: 'var(--accent-primary)' }}>
+                  <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(true)} style={{ color: 'var(--accent-primary)' }}>
                     Delete
                   </button>
                 </div>
@@ -643,6 +645,44 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && selectedRecording && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }} onClick={() => setShowDeleteConfirm(false)}>
+          <div style={{
+            background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--border-color)', padding: 24,
+            width: 400, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
+              <div style={{ color: 'var(--accent-primary)', flexShrink: 0, marginTop: 2 }}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Delete Recording?</div>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                  This will permanently delete <strong>{selectedRecording.title || 'this recording'}</strong> and
+                  all associated files (audio, transcript, and notes). This cannot be undone.
+                </div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
+              <button className="btn" onClick={handleDeleteRecording}
+                style={{ background: 'var(--accent-primary)', color: '#fff' }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toastMessage && <div className="toast">{toastMessage}</div>}
