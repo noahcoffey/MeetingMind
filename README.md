@@ -4,7 +4,7 @@
 
 A macOS desktop app for recording meetings, transcribing with AssemblyAI, and generating structured notes with Claude AI.
 
-![MeetingMind Recordings View](docs/screenshot.png)
+![MeetingMind Recordings View](docs/screenshot-recordings.png)
 
 ## Features
 
