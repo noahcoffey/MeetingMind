@@ -5,6 +5,7 @@ import ExportMenu from '../components/ExportMenu';
 import TranscriptViewer from '../components/TranscriptViewer';
 import AudioPlayer from '../components/AudioPlayer';
 import SearchBar from '../components/SearchBar';
+import SpeakerPanel from '../components/SpeakerPanel';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 
@@ -12,7 +13,7 @@ interface RecordingsPageProps {
   initialRecordingId?: string | null;
 }
 
-type DetailTab = 'notes' | 'transcript';
+type DetailTab = 'notes' | 'transcript' | 'speakers';
 
 export default function RecordingsPage({ initialRecordingId }: RecordingsPageProps) {
   const [recordings, setRecordings] = useState<Recording[]>([]);
@@ -585,6 +586,21 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                   >
                     Transcript
                   </button>
+                  <button
+                    onClick={() => setDetailTab('speakers')}
+                    style={{
+                      padding: '8px 16px',
+                      fontSize: 13,
+                      fontWeight: 500,
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: detailTab === 'speakers' ? '2px solid var(--accent-blue)' : '2px solid transparent',
+                      color: detailTab === 'speakers' ? 'var(--text-primary)' : 'var(--text-muted)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Speakers
+                  </button>
                 </div>
               )}
 
@@ -640,6 +656,15 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                     </div>
                   )}
                 </div>
+              )}
+
+              {/* Speakers tab */}
+              {detailTab === 'speakers' && (
+                <SpeakerPanel
+                  utterances={utterances}
+                  speakerNames={selectedRecording.speakerNames || {}}
+                  onRenameSpeaker={handleRenameSpeaker}
+                />
               )}
             </div>
           )}

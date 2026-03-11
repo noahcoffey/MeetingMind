@@ -207,10 +207,26 @@ export function setupIpcHandlers(): void {
       if (!manifest.speakerNames) manifest.speakerNames = {};
       manifest.speakerNames[oldName] = newName;
       fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+      // Add to global speaker directory if not already present
+      if (newName.trim() && !newName.startsWith('Speaker ')) {
+        const directory: string[] = getSetting('speakerDirectory') || [];
+        if (!directory.includes(newName.trim())) {
+          directory.push(newName.trim());
+          directory.sort((a, b) => a.localeCompare(b));
+          setSetting('speakerDirectory', directory);
+        }
+      }
+
       return { success: true };
     }
 
     return { success: false, error: 'Manifest not found' };
+  });
+
+  // Speaker directory
+  ipcMain.handle('speakers:getDirectory', async () => {
+    return getSetting('speakerDirectory') || [];
   });
 
   // Rename recording title

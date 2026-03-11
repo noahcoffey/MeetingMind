@@ -86,7 +86,13 @@ function buildPrompt(recording: any, transcript: string): string {
   });
 
   const eventTitle = recording.calendarEvent?.title || recording.title || 'Untitled Meeting';
-  const attendees = recording.calendarEvent?.attendees?.join(', ') || userName;
+  // Build attendees from calendar event, labeled speakers, or fall back to user name
+  const calendarAttendees = recording.calendarEvent?.attendees || [];
+  const recSpeakerNames: Record<string, string> = recording.speakerNames || {};
+  const labeledSpeakers = Object.values(recSpeakerNames).filter((name: string) => name && !name.startsWith('Speaker '));
+  const allAttendees = new Set<string>([...calendarAttendees, ...labeledSpeakers]);
+  if (userName) allAttendees.add(userName);
+  const attendees = allAttendees.size > 0 ? Array.from(allAttendees).join(', ') : userName;
   const duration = formatDuration(recording.duration);
   const userContext = recording.userContext || 'None provided';
 

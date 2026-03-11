@@ -49,9 +49,10 @@ const api = {
   connectMicrosoftCalendar: () => ipcRenderer.invoke('calendar:connectMicrosoft'),
   disconnectCalendar: (provider: string) => ipcRenderer.invoke('calendar:disconnect', provider),
 
-  // Speaker renaming
+  // Speaker renaming & directory
   renameSpeaker: (recordingId: string, oldName: string, newName: string) =>
     ipcRenderer.invoke('speakers:rename', recordingId, oldName, newName),
+  getSpeakerDirectory: () => ipcRenderer.invoke('speakers:getDirectory'),
 
   // Export
   copyNotesToClipboard: (recordingId: string) => ipcRenderer.invoke('export:clipboard', recordingId),

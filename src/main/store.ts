@@ -21,6 +21,7 @@ export interface AppSettings {
   globalHotkey: string;
   globalHotkeyPause: string;
   showTrayIcon: boolean;
+  speakerDirectory: string[];
 }
 
 const defaults: AppSettings = {
@@ -44,6 +45,7 @@ const defaults: AppSettings = {
   globalHotkey: 'CommandOrControl+Shift+R',
   globalHotkeyPause: 'CommandOrControl+Shift+P',
   showTrayIcon: true,
+  speakerDirectory: [],
 };
 
 let store: Store<AppSettings>;

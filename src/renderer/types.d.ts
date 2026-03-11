@@ -34,6 +34,7 @@ export interface MeetingMindAPI {
   disconnectCalendar: (provider: string) => Promise<{ success: boolean }>;
   renameRecording: (recordingId: string, newTitle: string) => Promise<{ success: boolean; error?: string }>;
   renameSpeaker: (recordingId: string, oldName: string, newName: string) => Promise<{ success: boolean }>;
+  getSpeakerDirectory: () => Promise<string[]>;
   copyNotesToClipboard: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
   exportAsPDF: (recordingId: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   emailNotes: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
