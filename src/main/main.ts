@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, protocol, net, systemPreferences } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeImage, protocol, net, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
@@ -129,6 +129,14 @@ app.on('before-quit', () => {
 app.whenReady().then(async () => {
   initializeLogger();
   log('info', 'MeetingMind starting up');
+
+  // Set dock icon (macOS) — needed during development; packaged builds use icon.icns
+  if (process.platform === 'darwin') {
+    const iconPath = path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), 'build', 'icon.png');
+    if (fs.existsSync(iconPath)) {
+      app.dock?.setIcon(nativeImage.createFromPath(iconPath));
+    }
+  }
 
   // Register custom protocol for serving local audio files to the renderer.
   // Handles range requests manually so audio seeking works correctly.
