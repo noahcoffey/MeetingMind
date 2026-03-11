@@ -43,6 +43,8 @@ export interface MeetingMindAPI {
   getAllTags: () => Promise<string[]>;
   getAnalyticsStats: () => Promise<AnalyticsStats>;
   getTrendInsights: () => Promise<string>;
+  getHighlightsPreview: (startDate: string, endDate: string) => Promise<HighlightsPreview>;
+  generateHighlights: (startDate: string, endDate: string) => Promise<{ success: boolean; report?: string; error?: string; meetingCount?: number }>;
   openInFinder: (filePath: string) => Promise<void>;
   openInObsidian: (vaultName: string, filePath: string) => Promise<void>;
   selectFolder: () => Promise<string | null>;
@@ -109,6 +111,13 @@ export interface AnalyticsStats {
   longestMeeting: { id: string; title: string; duration: number } | null;
   shortestMeeting: { id: string; title: string; duration: number } | null;
   recentTrend: 'increasing' | 'decreasing' | 'stable';
+}
+
+export interface HighlightsPreview {
+  meetingCount: number;
+  withNotes: number;
+  withoutNotes: number;
+  meetings: { title: string; date: string; hasNotes: boolean }[];
 }
 
 declare global {

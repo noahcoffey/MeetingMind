@@ -76,6 +76,12 @@ const api = {
     ipcRenderer.invoke('file:openInObsidian', vaultName, filePath),
   selectFolder: () => ipcRenderer.invoke('file:selectFolder'),
 
+  // Weekly Highlights
+  getHighlightsPreview: (startDate: string, endDate: string) =>
+    ipcRenderer.invoke('highlights:preview', startDate, endDate),
+  generateHighlights: (startDate: string, endDate: string) =>
+    ipcRenderer.invoke('highlights:generate', startDate, endDate),
+
   // Event listeners
   on: (channel: string, callback: (...args: unknown[]) => void) => {
     const validChannels = [
@@ -88,6 +94,8 @@ const api = {
       'notes:stream',
       'notes:complete',
       'crash-recovery',
+      'highlights:stream',
+      'highlights:complete',
     ];
     if (validChannels.includes(channel)) {
       const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args);

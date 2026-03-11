@@ -4,10 +4,11 @@ import RecordPage from './pages/RecordPage';
 import RecordingsPage from './pages/RecordingsPage';
 import SettingsPage from './pages/SettingsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import HighlightsPage from './pages/HighlightsPage';
 import OnboardingFlow from './pages/OnboardingFlow';
 import type { BackgroundJob } from './components/PipelineWidget';
 
-type Page = 'record' | 'recordings' | 'settings' | 'analytics';
+type Page = 'record' | 'recordings' | 'settings' | 'analytics' | 'highlights';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('record');
@@ -186,6 +187,7 @@ export default function App() {
         )}
         {currentPage === 'recordings' && <RecordingsPage initialRecordingId={viewRecordingId} />}
         {currentPage === 'settings' && <SettingsPage onSettingsChange={loadSettings} />}
+        {currentPage === 'highlights' && <HighlightsPage />}
         {currentPage === 'analytics' && <AnalyticsPage />}
       </div>
     </div>
