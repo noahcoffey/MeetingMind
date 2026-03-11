@@ -9,6 +9,9 @@ import { checkCrashRecovery } from './recorder';
 import { createTray, destroyTray, updateTray } from './tray';
 import { getRecordingStatus, startRecording, stopRecording, pauseRecording, resumeRecording } from './recording-manager';
 
+// Set app name so dock/taskbar shows "MeetingMind" instead of "Electron" in dev
+app.name = 'MeetingMind';
+
 // Register media:// as a privileged scheme before app ready
 // so audio/video elements can load from it.
 // NOTE: standard must be false — standard schemes parse the first path
