@@ -886,13 +886,13 @@ body {
 }
 
 /* Recordings list */
-.recording-list {
+.meeting-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.recording-item {
+.meeting-item {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -904,17 +904,17 @@ body {
   transition: all var(--transition);
 }
 
-.recording-item:hover {
+.meeting-item:hover {
   border-color: var(--accent-blue);
   background: var(--bg-input);
 }
 
-.recording-item-info {
+.meeting-item-info {
   flex: 1;
   min-width: 0;
 }
 
-.recording-item-title {
+.meeting-item-title {
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -922,7 +922,7 @@ body {
   text-overflow: ellipsis;
 }
 
-.recording-item-meta {
+.meeting-item-meta {
   font-size: 12px;
   color: var(--text-secondary);
   margin-top: 2px;

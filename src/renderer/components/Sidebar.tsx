@@ -1,7 +1,7 @@
 import React from 'react';
 import PipelineWidget, { BackgroundJob } from './PipelineWidget';
 
-type Page = 'record' | 'recordings' | 'settings' | 'analytics' | 'highlights';
+type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
 interface SidebarProps {
   currentPage: Page;
@@ -28,13 +28,13 @@ export default function Sidebar({ currentPage, onNavigate, backgroundJobs, onVie
         </button>
 
         <button
-          className={`sidebar-item ${currentPage === 'recordings' ? 'active' : ''}`}
-          onClick={() => onNavigate('recordings')}
+          className={`sidebar-item ${currentPage === 'meetings' ? 'active' : ''}`}
+          onClick={() => onNavigate('meetings')}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 12h4l3-9 4 18 3-9h4" />
           </svg>
-          Recordings
+          Meetings
         </button>
 
         <button

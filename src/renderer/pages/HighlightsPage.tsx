@@ -345,7 +345,7 @@ export default function HighlightsPage() {
                 color: 'var(--text-muted)',
                 textAlign: 'center',
               }}>
-                No recordings found in this date range.
+                No meetings found in this date range.
               </div>
             )}
           </>

@@ -9,15 +9,15 @@ import SpeakerPanel from '../components/SpeakerPanel';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 
-interface RecordingsPageProps {
-  initialRecordingId?: string | null;
+interface MeetingsPageProps {
+  initialMeetingId?: string | null;
 }
 
 type DetailTab = 'notes' | 'transcript' | 'speakers';
 
-export default function RecordingsPage({ initialRecordingId }: RecordingsPageProps) {
-  const [recordings, setRecordings] = useState<Recording[]>([]);
-  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
+export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
+  const [meetings, setMeetings] = useState<Recording[]>([]);
+  const [selectedMeeting, setSelectedMeeting] = useState<Recording | null>(null);
   const [notesContent, setNotesContent] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [transcriptionStatus, setTranscriptionStatus] = useState('');
@@ -37,7 +37,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   const [audioState, audioControls] = useAudioPlayer();
 
   useEffect(() => {
-    loadRecordings();
+    loadMeetings();
     loadAllTags();
 
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
@@ -46,8 +46,8 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
       if (status === 'complete') {
         setIsTranscribing(false);
         setTranscriptionStatus('');
-        refreshSelectedRecording();
-        loadRecordings();
+        refreshSelectedMeeting();
+        loadMeetings();
       } else if (status === 'error') {
         setIsTranscribing(false);
         setTranscriptionStatus(`Error: ${message}`);
@@ -63,16 +63,16 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   }, []);
 
   useEffect(() => {
-    if (initialRecordingId && recordings.length > 0) {
-      const rec = recordings.find(r => r.id === initialRecordingId);
-      if (rec) selectRecording(rec);
+    if (initialMeetingId && meetings.length > 0) {
+      const rec = meetings.find(r => r.id === initialMeetingId);
+      if (rec) selectMeeting(rec);
     }
-  }, [initialRecordingId, recordings]);
+  }, [initialMeetingId, meetings]);
 
-  async function loadRecordings() {
+  async function loadMeetings() {
     try {
       const list = await window.meetingMind.getRecordings();
-      setRecordings(list);
+      setMeetings(list);
     } catch {}
   }
 
@@ -83,18 +83,18 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     } catch {}
   }
 
-  async function refreshSelectedRecording() {
-    if (!selectedRecording) return;
-    const updated = await window.meetingMind.getRecording(selectedRecording.id);
+  async function refreshSelectedMeeting() {
+    if (!selectedMeeting) return;
+    const updated = await window.meetingMind.getRecording(selectedMeeting.id);
     if (updated) {
-      setSelectedRecording(updated);
-      loadRecordings();
+      setSelectedMeeting(updated);
+      loadMeetings();
       loadAllTags();
     }
   }
 
-  async function selectRecording(rec: Recording) {
-    setSelectedRecording(rec);
+  async function selectMeeting(rec: Recording) {
+    setSelectedMeeting(rec);
     setNotesContent('');
     setUtterances([]);
     setTranscriptionStatus('');
@@ -104,7 +104,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
 
     const freshRec = await window.meetingMind.getRecording(rec.id);
     if (freshRec) {
-      setSelectedRecording(freshRec);
+      setSelectedMeeting(freshRec);
 
       if (freshRec.status === 'complete' || freshRec.status === 'transcribed') {
         const notes = await window.meetingMind.getNotes(freshRec.id);
@@ -125,9 +125,9 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   }
 
   async function loadTranscript() {
-    if (!selectedRecording) return;
+    if (!selectedMeeting) return;
     try {
-      const data = await window.meetingMind.getTranscript(selectedRecording.id);
+      const data = await window.meetingMind.getTranscript(selectedMeeting.id);
       setUtterances(data || []);
     } catch {
       setUtterances([]);
@@ -135,10 +135,10 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   }
 
   async function handleTranscribe() {
-    if (!selectedRecording) return;
+    if (!selectedMeeting) return;
     setIsTranscribing(true);
     setTranscriptionStatus('Starting transcription...');
-    const result = await window.meetingMind.startTranscription(selectedRecording.id);
+    const result = await window.meetingMind.startTranscription(selectedMeeting.id);
     if (!result.success) {
       setIsTranscribing(false);
       setTranscriptionStatus(`Failed: ${result.error}`);
@@ -146,7 +146,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   }
 
   async function handleGenerateNotes() {
-    if (!selectedRecording) return;
+    if (!selectedMeeting) return;
     setNotesContent('');
     setIsStreaming(true);
     setIsLoadingNotes(true);
@@ -162,11 +162,11 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     window.meetingMind.on('notes:complete', () => {
       setIsStreaming(false);
       setIsLoadingNotes(false);
-      refreshSelectedRecording();
-      loadRecordings();
+      refreshSelectedMeeting();
+      loadMeetings();
     });
 
-    const result = await window.meetingMind.generateNotes(selectedRecording.id);
+    const result = await window.meetingMind.generateNotes(selectedMeeting.id);
     if (!result.success) {
       setIsStreaming(false);
       setIsLoadingNotes(false);
@@ -175,66 +175,66 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
   }
 
   async function handleSaveNotes() {
-    if (!selectedRecording) return;
-    const dateStr = new Date(selectedRecording.date).toISOString().slice(0, 10);
-    const title = selectedRecording.title || 'Untitled Meeting';
+    if (!selectedMeeting) return;
+    const dateStr = new Date(selectedMeeting.date).toISOString().slice(0, 10);
+    const title = selectedMeeting.title || 'Untitled Meeting';
     const filename = `${dateStr} - ${title}.md`;
-    const result = await window.meetingMind.saveNotes(selectedRecording.id, filename);
+    const result = await window.meetingMind.saveNotes(selectedMeeting.id, filename);
     if (result.success) showToast(`Saved to ${result.path}`);
     else showToast(`Save failed: ${result.error}`);
   }
 
   async function handleSaveToObsidian() {
-    if (!selectedRecording) return;
-    const dateStr = new Date(selectedRecording.date).toISOString().slice(0, 10);
-    const title = selectedRecording.title || 'Untitled Meeting';
+    if (!selectedMeeting) return;
+    const dateStr = new Date(selectedMeeting.date).toISOString().slice(0, 10);
+    const title = selectedMeeting.title || 'Untitled Meeting';
     const filename = `${dateStr} - ${title}.md`;
-    const result = await window.meetingMind.saveToObsidian(selectedRecording.id, filename);
+    const result = await window.meetingMind.saveToObsidian(selectedMeeting.id, filename);
     if (result.success) showToast('Saved to Obsidian vault!');
     else showToast(`Save failed: ${result.error}`);
   }
 
-  async function handleDeleteRecording() {
-    if (!selectedRecording) return;
-    const result = await window.meetingMind.deleteRecording(selectedRecording.id);
+  async function handleDeleteMeeting() {
+    if (!selectedMeeting) return;
+    const result = await window.meetingMind.deleteRecording(selectedMeeting.id);
     if (result.success) {
       setShowDeleteConfirm(false);
-      setSelectedRecording(null);
-      loadRecordings();
-      showToast('Recording deleted');
+      setSelectedMeeting(null);
+      loadMeetings();
+      showToast('Meeting deleted');
     }
   }
 
   async function handleTagsChange(tags: string[]) {
-    if (!selectedRecording) return;
-    await window.meetingMind.setRecordingTags(selectedRecording.id, tags);
-    setSelectedRecording({ ...selectedRecording, tags });
-    loadRecordings();
+    if (!selectedMeeting) return;
+    await window.meetingMind.setRecordingTags(selectedMeeting.id, tags);
+    setSelectedMeeting({ ...selectedMeeting, tags });
+    loadMeetings();
     loadAllTags();
   }
 
   function startEditingTitle() {
-    if (!selectedRecording) return;
-    setEditTitle(selectedRecording.title || '');
+    if (!selectedMeeting) return;
+    setEditTitle(selectedMeeting.title || '');
     setIsEditingTitle(true);
     setTimeout(() => titleInputRef.current?.focus(), 0);
   }
 
   async function saveTitle() {
-    if (!selectedRecording) return;
+    if (!selectedMeeting) return;
     const trimmed = editTitle.trim();
-    if (trimmed && trimmed !== selectedRecording.title) {
-      await window.meetingMind.renameRecording(selectedRecording.id, trimmed);
-      setSelectedRecording({ ...selectedRecording, title: trimmed });
-      loadRecordings();
+    if (trimmed && trimmed !== selectedMeeting.title) {
+      await window.meetingMind.renameRecording(selectedMeeting.id, trimmed);
+      setSelectedMeeting({ ...selectedMeeting, title: trimmed });
+      loadMeetings();
     }
     setIsEditingTitle(false);
   }
 
   async function handleRenameSpeaker(oldName: string, newName: string) {
-    if (!selectedRecording) return;
-    await window.meetingMind.renameSpeaker(selectedRecording.id, oldName, newName);
-    refreshSelectedRecording();
+    if (!selectedMeeting) return;
+    await window.meetingMind.renameSpeaker(selectedMeeting.id, oldName, newName);
+    refreshSelectedMeeting();
   }
 
   function showToast(msg: string) {
@@ -264,12 +264,12 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     }
   }
 
-  // Filter recordings by tag
-  const filteredRecordings = filterTag
-    ? recordings.filter(r => r.tags?.includes(filterTag))
-    : recordings;
+  // Filter meetings by tag
+  const filteredMeetings = filterTag
+    ? meetings.filter(r => r.tags?.includes(filterTag))
+    : meetings;
 
-  // Group recordings by day
+  // Group meetings by day
   function getDayLabel(dateStr: string): string {
     const d = new Date(dateStr);
     const today = new Date();
@@ -281,21 +281,21 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
     return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
   }
 
-  const dayGroups: { label: string; recordings: typeof filteredRecordings }[] = [];
-  for (const rec of filteredRecordings) {
+  const dayGroups: { label: string; meetings: typeof filteredMeetings }[] = [];
+  for (const rec of filteredMeetings) {
     const label = getDayLabel(rec.date);
     const last = dayGroups[dayGroups.length - 1];
     if (last && last.label === label) {
-      last.recordings.push(rec);
+      last.meetings.push(rec);
     } else {
-      dayGroups.push({ label, recordings: [rec] });
+      dayGroups.push({ label, meetings: [rec] });
     }
   }
 
   return (
     <>
       <div className="page-header">
-        <h1>Recordings</h1>
+        <h1>Meetings</h1>
       </div>
       <div className="page-content" style={{ display: 'flex', gap: 20, height: 'calc(100vh - 112px)' }}>
         {/* List */}
@@ -304,8 +304,8 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 8px 8px' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <SearchBar onSelectResult={(id) => {
-                const rec = recordings.find(r => r.id === id);
-                if (rec) selectRecording(rec);
+                const rec = meetings.find(r => r.id === id);
+                if (rec) selectMeeting(rec);
               }} />
             </div>
             {allTags.length > 0 && (
@@ -328,11 +328,11 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
             )}
           </div>
 
-          {/* Scrollable recordings list */}
+          {/* Scrollable meetings list */}
           <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
-          {filteredRecordings.length === 0 && (
+          {filteredMeetings.length === 0 && (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              {filterTag ? 'No recordings with this tag.' : 'No recordings yet. Start a recording to get started.'}
+              {filterTag ? 'No meetings with this tag.' : 'No meetings yet. Record a meeting to get started.'}
             </div>
           )}
 
@@ -348,20 +348,20 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
               }}>
                 {group.label}
               </div>
-              <div className="recording-list">
-                {group.recordings.map(rec => (
+              <div className="meeting-list">
+                {group.meetings.map(rec => (
                   <div
                     key={rec.id}
-                    className="recording-item"
-                    onClick={() => selectRecording(rec)}
+                    className="meeting-item"
+                    onClick={() => selectMeeting(rec)}
                     style={{
-                      borderColor: selectedRecording?.id === rec.id ? 'var(--accent-blue)' : undefined,
+                      borderColor: selectedMeeting?.id === rec.id ? 'var(--accent-blue)' : undefined,
                       position: 'relative',
                     }}
                   >
-                    <div className="recording-item-info">
-                      <div className="recording-item-title">{rec.title || 'Untitled Recording'}</div>
-                      <div className="recording-item-meta">
+                    <div className="meeting-item-info">
+                      <div className="meeting-item-title">{rec.title || 'Untitled Meeting'}</div>
+                      <div className="meeting-item-meta">
                         {new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &middot; {formatDuration(rec.duration)} &middot; {formatFileSize(rec.fileSize)}
                       </div>
                       {rec.tags && rec.tags.length > 0 && (
@@ -425,9 +425,9 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
 
         {/* Detail Panel */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {!selectedRecording ? (
+          {!selectedMeeting ? (
             <div className="card" style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
-              Select a recording to view details
+              Select a meeting to view details
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -462,26 +462,26 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                     onClick={startEditingTitle}
                     title="Click to edit title"
                   >
-                    {selectedRecording.title || 'Untitled Recording'}
+                    {selectedMeeting.title || 'Untitled Meeting'}
                     <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>&#9998;</span>
                   </h2>
                 )}
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                  {new Date(selectedRecording.date).toLocaleString()} &middot;{' '}
-                  {formatDuration(selectedRecording.duration)} &middot;{' '}
-                  {formatFileSize(selectedRecording.fileSize)}
-                  {selectedRecording.transcriptionCost && (
-                    <> &middot; <span style={{ color: 'var(--accent-yellow)' }}>${selectedRecording.transcriptionCost.estimatedCost.toFixed(4)}</span></>
+                  {new Date(selectedMeeting.date).toLocaleString()} &middot;{' '}
+                  {formatDuration(selectedMeeting.duration)} &middot;{' '}
+                  {formatFileSize(selectedMeeting.fileSize)}
+                  {selectedMeeting.transcriptionCost && (
+                    <> &middot; <span style={{ color: 'var(--accent-yellow)' }}>${selectedMeeting.transcriptionCost.estimatedCost.toFixed(4)}</span></>
                   )}
-                  <span className={`status-badge ${selectedRecording.status}`} style={{ marginLeft: 12 }}>
-                    {getStatusLabel(selectedRecording.status)}
+                  <span className={`status-badge ${selectedMeeting.status}`} style={{ marginLeft: 12 }}>
+                    {getStatusLabel(selectedMeeting.status)}
                   </span>
                 </div>
 
                 {/* Tags */}
                 <div style={{ marginBottom: 12 }}>
                   <TagEditor
-                    tags={selectedRecording.tags || []}
+                    tags={selectedMeeting.tags || []}
                     allTags={allTags}
                     onChange={handleTagsChange}
                   />
@@ -489,27 +489,27 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
 
                 {/* Action buttons */}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {selectedRecording.status === 'recorded' && (
+                  {selectedMeeting.status === 'recorded' && (
                     <button className="btn btn-primary" onClick={handleTranscribe} disabled={isTranscribing}>
                       {isTranscribing ? 'Transcribing...' : 'Transcribe'}
                     </button>
                   )}
-                  {selectedRecording.status === 'transcribed' && (
+                  {selectedMeeting.status === 'transcribed' && (
                     <button className="btn btn-primary" onClick={handleGenerateNotes} disabled={isStreaming}>
                       {isStreaming ? 'Generating...' : 'Generate Notes'}
                     </button>
                   )}
-                  {selectedRecording.status === 'complete' && (
+                  {selectedMeeting.status === 'complete' && (
                     <>
                       <button className="btn btn-primary" onClick={handleSaveNotes}>Save Notes</button>
                       <button className="btn btn-secondary" onClick={handleSaveToObsidian}>Save to Obsidian</button>
-                      <ExportMenu recordingId={selectedRecording.id} onToast={showToast} />
+                      <ExportMenu recordingId={selectedMeeting.id} onToast={showToast} />
                       <button className="btn btn-secondary" onClick={handleGenerateNotes} disabled={isStreaming}>
                         Regenerate
                       </button>
                     </>
                   )}
-                  <button className="btn btn-ghost" onClick={() => window.meetingMind.openInFinder(selectedRecording.audioPath)}>
+                  <button className="btn btn-ghost" onClick={() => window.meetingMind.openInFinder(selectedMeeting.audioPath)}>
                     Open in Finder
                   </button>
                   <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(true)} style={{ color: 'var(--accent-primary)' }}>
@@ -519,7 +519,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
               </div>
 
               {/* Audio Player — pinned */}
-              {selectedRecording.audioPath && (
+              {selectedMeeting.audioPath && (
                 <div style={{ flexShrink: 0, marginBottom: 12 }}>
                   <AudioPlayer
                     isPlaying={audioState.isPlaying}
@@ -554,7 +554,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
               )}
 
               {/* Tab bar for Notes / Transcript — pinned */}
-              {(selectedRecording.status === 'transcribed' || selectedRecording.status === 'complete' || selectedRecording.status === 'generating') && (
+              {(selectedMeeting.status === 'transcribed' || selectedMeeting.status === 'complete' || selectedMeeting.status === 'generating') && (
                 <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-color)', flexShrink: 0, paddingLeft: 12 }}>
                   <button
                     onClick={() => setDetailTab('notes')}
@@ -605,7 +605,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
               )}
 
               {/* Notes tab */}
-              {detailTab === 'notes' && (isStreaming || isLoadingNotes || notesContent || selectedRecording.status === 'complete') && (
+              {detailTab === 'notes' && (isStreaming || isLoadingNotes || notesContent || selectedMeeting.status === 'complete') && (
                 <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
                   <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 8 }}>
                     Meeting Notes
@@ -641,7 +641,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                     <TranscriptViewer
                       utterances={utterances}
                       currentTime={audioState.currentTime}
-                      speakerNames={selectedRecording.speakerNames || {}}
+                      speakerNames={selectedMeeting.speakerNames || {}}
                       onSeek={audioControls.seek}
                       onRenameSpeaker={handleRenameSpeaker}
                     />
@@ -662,7 +662,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
               {detailTab === 'speakers' && (
                 <SpeakerPanel
                   utterances={utterances}
-                  speakerNames={selectedRecording.speakerNames || {}}
+                  speakerNames={selectedMeeting.speakerNames || {}}
                   onRenameSpeaker={handleRenameSpeaker}
                 />
               )}
@@ -672,7 +672,7 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
       </div>
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && selectedRecording && (
+      {showDeleteConfirm && selectedMeeting && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
@@ -691,16 +691,16 @@ export default function RecordingsPage({ initialRecordingId }: RecordingsPagePro
                 </svg>
               </div>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Delete Recording?</div>
+                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Delete Meeting?</div>
                 <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  This will permanently delete <strong>{selectedRecording.title || 'this recording'}</strong> and
+                  This will permanently delete <strong>{selectedMeeting.title || 'this meeting'}</strong> and
                   all associated files (audio, transcript, and notes). This cannot be undone.
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-              <button className="btn" onClick={handleDeleteRecording}
+              <button className="btn" onClick={handleDeleteMeeting}
                 style={{ background: 'var(--accent-primary)', color: '#fff' }}>
                 Delete
               </button>

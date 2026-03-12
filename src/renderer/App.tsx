@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import RecordPage from './pages/RecordPage';
-import RecordingsPage from './pages/RecordingsPage';
+import MeetingsPage from './pages/MeetingsPage';
 import SettingsPage from './pages/SettingsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import HighlightsPage from './pages/HighlightsPage';
 import OnboardingFlow from './pages/OnboardingFlow';
 import type { BackgroundJob } from './components/PipelineWidget';
 
-type Page = 'record' | 'recordings' | 'settings' | 'analytics' | 'highlights';
+type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('record');
@@ -46,13 +46,13 @@ export default function App() {
 
   function handleRecordingComplete(recordingId: string) {
     setViewRecordingId(recordingId);
-    setCurrentPage('recordings');
+    setCurrentPage('meetings');
   }
 
   // Called by RecordPage after a recording is saved — kicks off background pipeline
   const handleRecordingSaved = useCallback(async (recordingId: string) => {
     // Fetch recording info for the title
-    let title = 'Untitled Recording';
+    let title = 'Untitled Meeting';
     try {
       const rec = await window.meetingMind.getRecording(recordingId);
       if (rec?.title) title = rec.title;
@@ -148,13 +148,13 @@ export default function App() {
 
   function handleViewJobRecording(recordingId: string) {
     setViewRecordingId(recordingId);
-    setCurrentPage('recordings');
+    setCurrentPage('meetings');
     // Dismiss the job notification
     handleDismissJob(recordingId);
   }
 
   function handleNavigate(page: Page) {
-    if (page !== 'recordings') {
+    if (page !== 'meetings') {
       setViewRecordingId(null);
     }
     setCurrentPage(page);
@@ -162,7 +162,7 @@ export default function App() {
 
   function handleSearchSelect(recordingId: string) {
     setViewRecordingId(recordingId);
-    setCurrentPage('recordings');
+    setCurrentPage('meetings');
   }
 
   if (showOnboarding) {
@@ -185,7 +185,7 @@ export default function App() {
             onRecordingSaved={handleRecordingSaved}
           />
         )}
-        {currentPage === 'recordings' && <RecordingsPage initialRecordingId={viewRecordingId} />}
+        {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} />}
         {currentPage === 'settings' && <SettingsPage onSettingsChange={loadSettings} />}
         {currentPage === 'highlights' && <HighlightsPage />}
         {currentPage === 'analytics' && <AnalyticsPage />}

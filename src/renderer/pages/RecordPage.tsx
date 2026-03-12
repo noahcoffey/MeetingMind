@@ -662,10 +662,10 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
                 )}
                 <div className="rp-complete-actions">
                   <button className="btn btn-primary" onClick={handleViewRecording}>
-                    View Recording
+                    View Meeting
                   </button>
                   <button className="btn btn-secondary" onClick={handleReset}>
-                    New Recording
+                    New Meeting
                   </button>
                 </div>
               </div>
@@ -757,7 +757,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
                 </svg>
               </div>
               <div>
-                <div className="rp-modal-title">Discard Recording?</div>
+                <div className="rp-modal-title">Discard Meeting?</div>
                 <div className="rp-modal-desc">
                   This will stop the recording and permanently delete all captured audio. This cannot be undone.
                 </div>
@@ -773,7 +773,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
 
             <div className="rp-modal-actions">
               <button className="btn btn-secondary" onClick={() => setShowDiscardModal(false)}>
-                Keep Recording
+                Keep Recording Data
               </button>
               <button className="btn btn-danger" onClick={handleDiscardConfirm}>
                 Discard

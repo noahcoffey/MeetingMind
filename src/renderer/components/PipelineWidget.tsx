@@ -39,7 +39,7 @@ export default function PipelineWidget({ jobs, onViewRecording, onDismiss }: Pip
             textOverflow: 'ellipsis',
             marginBottom: 4,
           }}>
-            {job.title || 'Untitled Recording'}
+            {job.title || 'Untitled Meeting'}
           </div>
 
           {/* Status row */}
