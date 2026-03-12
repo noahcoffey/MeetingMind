@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import AudioMeter from '../components/AudioMeter';
 
 interface RecordPageProps {
   onRecordingComplete?: (recordingId: string) => void;
@@ -41,6 +40,8 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
   const waveformContainerRef = useRef<HTMLDivElement | null>(null);
 
   const hasCalendar = calendarEvents.length > 0;
+  const isRecording = stage === 'recording';
+  const isProcessing = stage === 'stopping' || stage === 'merging';
 
   useEffect(() => {
     loadDevices();
@@ -55,14 +56,12 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
     };
   }, []);
 
-  // Scroll to next meeting when events load
   useEffect(() => {
     if (nextMeetingRef.current) {
       nextMeetingRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
   }, [calendarEvents]);
 
-  // Keep canvas pixel width in sync with layout for crisp rendering
   useEffect(() => {
     if (!isRecording) return;
     const container = waveformContainerRef.current;
@@ -148,12 +147,11 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
         const avg = data.reduce((a, b) => a + b, 0) / data.length / 255;
         setAudioLevel(avg);
 
-        // Push to waveform history and draw
         const history = waveformHistoryRef.current;
         history.push(avg);
         const canvas = waveformCanvasRef.current;
         if (canvas) {
-          const maxSamples = Math.floor(canvas.width / 3); // 2px bar + 1px gap
+          const maxSamples = Math.floor(canvas.width / 3);
           if (history.length > maxSamples) {
             history.splice(0, history.length - maxSamples);
           }
@@ -194,21 +192,17 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
 
     ctx.clearRect(0, 0, w, h);
 
-    // Create a vertical gradient: green at center → cyan → blue → purple → pink → red at peaks
     const grad = ctx.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, '#ef4444');    // red at top peak
-    grad.addColorStop(0.1, '#f472b6'); // pink
-    grad.addColorStop(0.2, '#a855f7'); // purple
-    grad.addColorStop(0.3, '#6366f1'); // indigo
-    grad.addColorStop(0.4, '#3b82f6'); // blue
-    grad.addColorStop(0.5, '#10b981'); // emerald at center
-    grad.addColorStop(0.6, '#3b82f6'); // blue
-    grad.addColorStop(0.7, '#6366f1'); // indigo
-    grad.addColorStop(0.8, '#a855f7'); // purple
-    grad.addColorStop(0.9, '#f472b6'); // pink
-    grad.addColorStop(1, '#ef4444');   // red at bottom peak
+    grad.addColorStop(0, '#ef4444');
+    grad.addColorStop(0.15, '#f472b6');
+    grad.addColorStop(0.3, '#a855f7');
+    grad.addColorStop(0.45, '#6366f1');
+    grad.addColorStop(0.5, '#10b981');
+    grad.addColorStop(0.55, '#6366f1');
+    grad.addColorStop(0.7, '#a855f7');
+    grad.addColorStop(0.85, '#f472b6');
+    grad.addColorStop(1, '#ef4444');
 
-    // Draw from right edge, scrolling left
     const startX = w - history.length * step;
     for (let i = 0; i < history.length; i++) {
       const level = history[i];
@@ -219,12 +213,10 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
       const halfBar = barH / 2;
 
       if (level > 0.05) {
-        // Fade opacity slightly for quieter bars
-        const alpha = 0.4 + level * 0.6;
-        ctx.globalAlpha = alpha;
+        ctx.globalAlpha = 0.4 + level * 0.6;
         ctx.fillStyle = grad;
       } else {
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.25;
         ctx.fillStyle = '#334155';
       }
 
@@ -232,15 +224,12 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
     }
 
     ctx.globalAlpha = 1;
-
-    // Subtle center line
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.1)';
+    ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
     ctx.fillRect(0, centerY, w, 1);
   }
 
   function handleSelectEvent(event: any) {
     if (selectedEvent?.id === event.id) {
-      // Deselect
       setSelectedEvent(null);
       setMeetingTitle('');
     } else {
@@ -253,10 +242,8 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
     if (isPaused) {
       const result = await window.meetingMind.resumeRecording();
       if (result.success) {
-        // Accumulate the paused duration
         pausedDurationRef.current += Date.now() - pauseStartRef.current;
         pauseStartRef.current = 0;
-        // Restart the timer
         timerRef.current = setInterval(() => {
           const elapsed = Date.now() - startTimeRef.current - pausedDurationRef.current;
           setDuration(Math.floor(elapsed / 1000));
@@ -304,7 +291,6 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
         setStage('complete');
         setPipelineMessage('Recording saved!');
 
-        // Hand off background processing (transcription + notes) to App
         if (onRecordingSaved) {
           onRecordingSaved(result.recordingId);
         }
@@ -392,22 +378,16 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  // Determine the next upcoming meeting
   const now = Date.now();
   const nextEventIndex = calendarEvents.findIndex(e => new Date(e.startTime).getTime() > now);
 
-  // Group events by day label
   function getDayLabel(dateStr: string): string {
     const d = new Date(dateStr);
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
     if (d.toDateString() === today.toDateString()) return 'Today';
     if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
     return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   }
 
@@ -425,9 +405,6 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
     return start <= now && end >= now;
   }
 
-  const isProcessing = stage === 'stopping' || stage === 'merging';
-
-  // Build day groups for the event list
   const dayGroups: { label: string; events: any[] }[] = [];
   for (const event of calendarEvents) {
     const label = getDayLabel(event.startTime);
@@ -439,97 +416,70 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
     }
   }
 
-  const isRecording = stage === 'recording';
+  const hasSystemDevices = systemAudioDevices.length > 0;
 
   return (
-    <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-      {/* Main recording column */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div className="page-header">
-          <h1>Record</h1>
-        </div>
+    <div className="rp-root">
+      {/* Main column */}
+      <div className="rp-main">
+        {/* Header — only in non-recording states */}
+        {!isRecording && (
+          <div className="rp-header">
+            <h1>Record</h1>
+          </div>
+        )}
 
-        {/* Recording control bar — shown when actively recording */}
+        {/* ─── Recording bar: waveform + controls ─── */}
         {isRecording && (
-          <div style={{
-            padding: '12px 28px',
-            background: 'var(--bg-secondary)',
-            borderBottom: '1px solid var(--border-color)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            flexShrink: 0,
-          }}>
-            {/* Audio visualization — takes available space */}
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12 }}>
-              {/* Recording indicator dot */}
-              <div style={{
-                width: 10,
-                height: 10,
-                borderRadius: '50%',
-                background: isPaused ? 'var(--accent-yellow)' : 'var(--accent-primary)',
-                animation: isPaused ? 'none' : 'pulse-dot 1.5s ease-in-out infinite',
-                flexShrink: 0,
-              }} />
+          <div className="rp-recording-bar" style={{ paddingTop: 'var(--titlebar-height)' }}>
+            <div className="rp-waveform-section">
+              <div className={`rp-rec-indicator ${isPaused ? 'paused' : 'active'}`} />
 
-              {/* Scrolling waveform */}
-              <div ref={waveformContainerRef} style={{ flex: 1, height: 120, borderRadius: 6, overflow: 'hidden' }}>
+              <div className="rp-waveform-wrap" ref={waveformContainerRef}>
                 <canvas
                   ref={waveformCanvasRef}
-                  height={120 * (window.devicePixelRatio || 1)}
-                  style={{ width: '100%', height: 120, display: 'block' }}
+                  height={80 * (window.devicePixelRatio || 1)}
                 />
               </div>
 
-              {/* Timer */}
-              <div style={{
-                fontVariantNumeric: 'tabular-nums',
-                fontSize: 18,
-                fontWeight: 500,
-                letterSpacing: 1,
-                color: isPaused ? 'var(--accent-yellow)' : 'var(--text-primary)',
-                flexShrink: 0,
-                minWidth: 80,
-                textAlign: 'right',
-              }}>
+              <div className={`rp-timer ${isPaused ? 'paused' : ''}`}>
                 {formatDuration(duration)}
               </div>
             </div>
 
-            {/* Control buttons */}
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+            <div className="rp-controls">
               <button
-                className="btn btn-secondary"
+                className="rp-ctrl-btn pause"
                 onClick={handlePauseResume}
-                style={{ padding: '6px 12px', fontSize: 13 }}
                 title={isPaused ? 'Resume' : 'Pause'}
               >
                 {isPaused ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                     <polygon points="5,3 19,12 5,21" />
                   </svg>
                 ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                     <rect x="6" y="4" width="4" height="16" />
                     <rect x="14" y="4" width="4" height="16" />
                   </svg>
                 )}
+                {isPaused ? 'Resume' : 'Pause'}
               </button>
+
               <button
-                className="btn btn-danger"
+                className="rp-ctrl-btn stop"
                 onClick={handleToggleRecording}
-                style={{ padding: '6px 12px', fontSize: 13 }}
                 title="Stop Recording"
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                   <rect x="4" y="4" width="16" height="16" rx="2" />
                 </svg>
                 Stop
               </button>
+
               <button
-                className="btn btn-ghost"
+                className="rp-ctrl-btn discard"
                 onClick={() => setShowDiscardModal(true)}
-                style={{ padding: '6px 8px', fontSize: 12, color: 'var(--text-muted)' }}
                 title="Discard"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -538,207 +488,197 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
                 </svg>
               </button>
             </div>
+
+            {isPaused && (
+              <div className="rp-paused-banner">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  <rect x="6" y="4" width="4" height="16" />
+                  <rect x="14" y="4" width="4" height="16" />
+                </svg>
+                Recording paused
+              </div>
+            )}
           </div>
         )}
 
-        <div style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 20,
-          padding: '20px 28px 28px',
-          overflowY: 'auto',
-        }}>
-
-          {/* Title field — always visible */}
-          <div style={{ width: '100%', maxWidth: 500 }}>
-            <label className="form-label">Recording Title</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Untitled Recording"
-              value={meetingTitle}
-              onChange={e => setMeetingTitle(e.target.value)}
-              disabled={isProcessing}
-              style={{ fontSize: 15, fontWeight: 500 }}
-            />
-          </div>
-
-          {/* Additional Context — always editable */}
-          <div style={{ width: '100%', maxWidth: 500 }}>
-            <label className="form-label">Additional Context</label>
-            <textarea
-              className="form-textarea"
-              placeholder="Add any notes for Claude (e.g., 'Sprint planning for Q2')"
-              value={userContext}
-              onChange={e => setUserContext(e.target.value)}
-              rows={2}
-              disabled={isProcessing}
-            />
-          </div>
-
-          {/* Device Selectors — hidden when recording */}
-          {!isRecording && (
-            <>
-              <div style={{ width: '100%', maxWidth: 500 }}>
-                <label className="form-label">Audio Input Device</label>
-                <select
-                  className="form-select"
-                  value={selectedDevice}
-                  onChange={e => setSelectedDevice(e.target.value)}
+        {/* ─── Body ─── */}
+        <div className="rp-body">
+          {/* ─── Idle: centered studio layout ─── */}
+          {(stage === 'idle' || stage === 'complete') && !isProcessing && stage !== 'complete' && (
+            <div className="rp-idle-stage">
+              {/* Record button hero */}
+              <div className="rp-record-hero">
+                <div className="rp-hero-label">Ready to Record</div>
+                <button
+                  className="record-button"
+                  onClick={handleToggleRecording}
                   disabled={isProcessing}
+                  title="Start Recording"
                 >
-                  {devices.map(d => (
-                    <option key={d.deviceId} value={d.deviceId}>
-                      {d.label || `Microphone (${d.deviceId.slice(0, 8)})`}
-                    </option>
-                  ))}
-                  {devices.length === 0 && <option value="default">Default Microphone</option>}
-                </select>
+                  <div className="record-inner" />
+                </button>
               </div>
 
-              {systemAudioDevices.length > 0 && (
-                <div style={{ width: '100%', maxWidth: 500 }}>
-                  <label className="form-label">System Audio (Optional)</label>
+              {/* Title + Context */}
+              <div className="rp-fields">
+                <div>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Meeting title (optional)"
+                    value={meetingTitle}
+                    onChange={e => setMeetingTitle(e.target.value)}
+                    style={{ fontSize: 14 }}
+                  />
+                </div>
+                <div>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="Context for Claude (e.g. 'Sprint planning for Q2')"
+                    value={userContext}
+                    onChange={e => setUserContext(e.target.value)}
+                    rows={2}
+                    style={{ minHeight: 56, fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              {/* Device pickers */}
+              <div className={`rp-devices ${!hasSystemDevices ? 'single-col' : ''}`}>
+                <div className="rp-device-group">
+                  <label>Microphone</label>
                   <select
-                    className="form-select"
-                    value={selectedSystemDevice}
-                    onChange={e => setSelectedSystemDevice(e.target.value)}
-                    disabled={isProcessing}
+                    value={selectedDevice}
+                    onChange={e => setSelectedDevice(e.target.value)}
                   >
-                    <option value="">None — mic only</option>
-                    {systemAudioDevices.map(d => (
-                      <option key={d.index} value={String(d.index)}>
-                        {d.name}{d.isVirtual ? ' (virtual)' : ''}
+                    {devices.map(d => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.label || `Microphone (${d.deviceId.slice(0, 8)})`}
                       </option>
                     ))}
+                    {devices.length === 0 && <option value="default">Default Microphone</option>}
                   </select>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-                    Select a virtual audio device (e.g. BlackHole) to capture system audio from Zoom/Teams/Meet.
+                </div>
+
+                {hasSystemDevices && (
+                  <div className="rp-device-group">
+                    <label>System Audio</label>
+                    <select
+                      value={selectedSystemDevice}
+                      onChange={e => setSelectedSystemDevice(e.target.value)}
+                    >
+                      <option value="">None — mic only</option>
+                      {systemAudioDevices.map(d => (
+                        <option key={d.index} value={String(d.index)}>
+                          {d.name}{d.isVirtual ? ' (virtual)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="rp-device-hint">
+                      Virtual audio device (BlackHole) to capture Zoom/Teams/Meet
+                    </div>
                   </div>
+                )}
+              </div>
+
+              {/* Error */}
+              {pipelineMessage && (
+                <div className="rp-error">{pipelineMessage}</div>
+              )}
+
+              {/* Disk warning */}
+              {diskWarning && (
+                <div className={`disk-warning rp-disk-warning ${diskWarning === 'critical' ? 'critical' : ''}`}>
+                  {diskWarning === 'critical'
+                    ? 'Disk space critically low! Recording paused.'
+                    : 'Low disk space warning — less than 500MB remaining'}
                 </div>
               )}
-            </>
-          )}
-
-          {/* Record Button — only shown when NOT recording (controls are in the bar above) */}
-          {!isRecording && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 8 }}>
-              <button
-                className="record-button"
-                onClick={handleToggleRecording}
-                disabled={isProcessing}
-                title="Start Recording"
-                style={{ opacity: isProcessing ? 0.4 : 1, cursor: isProcessing ? 'not-allowed' : 'pointer' }}
-              >
-                <div className="record-inner" />
-              </button>
             </div>
           )}
 
-          {/* Paused indicator inline */}
-          {isRecording && isPaused && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 20px',
-              background: 'rgba(245, 158, 11, 0.1)',
-              border: '1px solid rgba(245, 158, 11, 0.25)',
-              borderRadius: 'var(--radius)',
-              color: 'var(--accent-yellow)',
-              fontSize: 13,
-              fontWeight: 500,
-            }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                <rect x="6" y="4" width="4" height="16" />
-                <rect x="14" y="4" width="4" height="16" />
-              </svg>
-              Recording paused
+          {/* ─── Recording: editable fields below waveform ─── */}
+          {isRecording && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, paddingTop: 20 }}>
+              <div className="rp-fields">
+                <div>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Meeting title (optional)"
+                    value={meetingTitle}
+                    onChange={e => setMeetingTitle(e.target.value)}
+                    style={{ fontSize: 14 }}
+                  />
+                </div>
+                <div>
+                  <textarea
+                    className="form-textarea"
+                    placeholder="Context for Claude (e.g. 'Sprint planning for Q2')"
+                    value={userContext}
+                    onChange={e => setUserContext(e.target.value)}
+                    rows={2}
+                    style={{ minHeight: 56, fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              {diskWarning && (
+                <div className={`disk-warning rp-disk-warning ${diskWarning === 'critical' ? 'critical' : ''}`}>
+                  {diskWarning === 'critical'
+                    ? 'Disk space critically low! Recording paused.'
+                    : 'Low disk space warning — less than 500MB remaining'}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Pipeline Status */}
+          {/* ─── Processing ─── */}
           {isProcessing && (
-            <div className="card" style={{ width: '100%', maxWidth: 500, textAlign: 'center' }}>
-              <div style={{ marginBottom: 12 }}>
-                <div className="pipeline-spinner" style={{ margin: '0 auto' }} />
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>
-                {stage === 'stopping' && 'Stopping...'}
-                {stage === 'merging' && 'Processing Audio'}
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                {pipelineMessage}
-              </div>
-            </div>
-          )}
-
-          {/* Completion summary */}
-          {stage === 'complete' && completedRecordingId && (
-            <div className="card" style={{ width: '100%', maxWidth: 500, textAlign: 'center' }}>
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', margin: '0 auto 8px' }}>
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                <polyline points="22 4 12 14.01 9 11.01" />
-              </svg>
-              <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
-                {pipelineMessage}
-              </div>
-              {recordingResult && (
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                  Duration: {formatDuration(recordingResult.duration)} &middot; Size: {formatFileSize(recordingResult.fileSize)}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="rp-status-card">
+                <div className="rp-spinner" />
+                <div className="rp-status-title">
+                  {stage === 'stopping' ? 'Stopping...' : 'Processing Audio'}
                 </div>
-              )}
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                <button className="btn btn-primary" onClick={handleViewRecording}>
-                  View Recording
-                </button>
-                <button className="btn btn-secondary" onClick={handleReset}>
-                  New Recording
-                </button>
+                <div className="rp-status-msg">{pipelineMessage}</div>
               </div>
             </div>
           )}
 
-          {/* Error message */}
-          {stage === 'idle' && pipelineMessage && (
-            <div style={{ fontSize: 13, color: 'var(--accent-primary)', textAlign: 'center' }}>
-              {pipelineMessage}
-            </div>
-          )}
-
-          {/* Disk Warning */}
-          {diskWarning && (
-            <div className={`disk-warning ${diskWarning === 'critical' ? 'critical' : ''}`} style={{ maxWidth: 500, width: '100%' }}>
-              {diskWarning === 'critical'
-                ? 'Disk space critically low! Recording paused.'
-                : 'Low disk space warning — less than 500MB remaining'}
+          {/* ─── Complete ─── */}
+          {stage === 'complete' && completedRecordingId && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="rp-status-card">
+                <svg className="rp-complete-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--accent-green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                <div className="rp-status-title">{pipelineMessage}</div>
+                {recordingResult && (
+                  <div className="rp-complete-meta">
+                    {formatDuration(recordingResult.duration)} &middot; {formatFileSize(recordingResult.fileSize)}
+                  </div>
+                )}
+                <div className="rp-complete-actions">
+                  <button className="btn btn-primary" onClick={handleViewRecording}>
+                    View Recording
+                  </button>
+                  <button className="btn btn-secondary" onClick={handleReset}>
+                    New Recording
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Calendar column — sits as a sibling to the left column, fills full height */}
+      {/* ─── Calendar sidebar ─── */}
       {hasCalendar && (
-        <div style={{
-          width: 280,
-          flexShrink: 0,
-          borderLeft: '1px solid var(--border-color)',
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'var(--bg-secondary)',
-        }}>
-          <div style={{
-            padding: '14px 16px 10px',
-            paddingTop: 'calc(var(--titlebar-height) + 14px)',
-            borderBottom: '1px solid var(--border-color)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Meetings</span>
+        <div className="rp-calendar">
+          <div className="rp-cal-header">
+            <span>Meetings</span>
             <button
               className="btn btn-ghost"
               onClick={() => loadCalendarEvents(true)}
@@ -748,19 +688,10 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
             </button>
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+          <div className="rp-cal-list">
             {dayGroups.map(group => (
               <div key={group.label}>
-                <div style={{
-                  padding: '10px 16px 4px',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  color: 'var(--text-muted)',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                }}>
-                  {group.label}
-                </div>
+                <div className="rp-cal-day-label">{group.label}</div>
 
                 {group.events.map((event) => {
                   const globalIdx = calendarEvents.indexOf(event);
@@ -769,87 +700,32 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
                   const isCurrent = isEventNow(event);
                   const isSelected = selectedEvent?.id === event.id;
 
+                  const classes = [
+                    'rp-cal-event',
+                    isNext && !isCurrent ? 'next' : '',
+                    isCurrent ? 'now' : '',
+                    isSelected ? 'selected' : '',
+                    isPast && !isCurrent ? 'past' : '',
+                  ].filter(Boolean).join(' ');
+
                   return (
                     <div
                       key={event.id}
                       ref={isNext ? nextMeetingRef : undefined}
                       onClick={() => handleSelectEvent(event)}
-                      style={{
-                        padding: '8px 16px',
-                        cursor: 'pointer',
-                        borderLeft: isNext
-                          ? '3px solid var(--accent-blue)'
-                          : isCurrent
-                            ? '3px solid var(--accent-green)'
-                            : '3px solid transparent',
-                        background: isSelected
-                          ? 'var(--accent-blue)'
-                          : isNext
-                            ? 'rgba(59, 130, 246, 0.08)'
-                            : 'transparent',
-                        opacity: isPast && !isCurrent ? 0.5 : 1,
-                        transition: 'background 150ms ease',
-                        marginBottom: 1,
-                      }}
-                      onMouseEnter={e => {
-                        if (!isSelected) (e.currentTarget.style.background = 'var(--bg-card)');
-                      }}
-                      onMouseLeave={e => {
-                        if (!isSelected) {
-                          e.currentTarget.style.background = isNext
-                            ? 'rgba(59, 130, 246, 0.08)'
-                            : 'transparent';
-                        }
-                      }}
+                      className={classes}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                        <span style={{
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color: isSelected
-                            ? 'rgba(255,255,255,0.8)'
-                            : isCurrent
-                              ? 'var(--accent-green)'
-                              : 'var(--text-muted)',
-                          fontVariantNumeric: 'tabular-nums',
-                          minWidth: 50,
-                        }}>
-                          {formatEventTime(event.startTime)}
-                        </span>
-
+                      <div className="rp-cal-event-time">
+                        {formatEventTime(event.startTime)}
                         {isCurrent && !isSelected && (
-                          <span style={{
-                            fontSize: 9, fontWeight: 700,
-                            color: 'var(--accent-green)',
-                            textTransform: 'uppercase', letterSpacing: '0.5px',
-                          }}>NOW</span>
+                          <span className="rp-cal-event-badge" style={{ color: 'var(--accent-green)' }}>NOW</span>
                         )}
-
                         {isNext && !isCurrent && !isSelected && (
-                          <span style={{
-                            fontSize: 9, fontWeight: 700,
-                            color: 'var(--accent-blue)',
-                            textTransform: 'uppercase', letterSpacing: '0.5px',
-                          }}>NEXT</span>
+                          <span className="rp-cal-event-badge" style={{ color: 'var(--accent-blue)' }}>NEXT</span>
                         )}
                       </div>
-
-                      <div style={{
-                        fontSize: 13,
-                        fontWeight: isNext || isCurrent ? 600 : 400,
-                        color: isSelected ? '#fff' : 'var(--text-primary)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}>
-                        {event.title}
-                      </div>
-
-                      <div style={{
-                        fontSize: 11,
-                        color: isSelected ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)',
-                        marginTop: 1,
-                      }}>
+                      <div className="rp-cal-event-title">{event.title}</div>
+                      <div className="rp-cal-event-detail">
                         {formatEventTime(event.startTime)} – {formatEventTime(event.endTime)}
                         {event.attendees?.length > 0 && (
                           <span> &middot; {event.attendees.length} attendee{event.attendees.length !== 1 ? 's' : ''}</span>
@@ -862,89 +738,44 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
             ))}
 
             {calendarEvents.length === 0 && (
-              <div style={{ padding: '20px 16px', fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>
-                No meetings in the next 24 hours
-              </div>
+              <div className="rp-cal-empty">No meetings in the next 24 hours</div>
             )}
           </div>
         </div>
       )}
 
-      {/* Discard confirmation modal */}
+      {/* ─── Discard modal ─── */}
       {showDiscardModal && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0, 0, 0, 0.6)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 2000,
-        }}
-          onClick={() => setShowDiscardModal(false)}
-        >
-          <div
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--radius-lg)',
-              padding: 28,
-              width: 400,
-              maxWidth: '90vw',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
-            }}
-            onClick={e => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-              <div style={{
-                width: 40,
-                height: 40,
-                borderRadius: '50%',
-                background: 'rgba(231, 76, 60, 0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="rp-modal-backdrop" onClick={() => setShowDiscardModal(false)}>
+          <div className="rp-modal" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 4 }}>
+              <div className="rp-modal-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="8" x2="12" y2="12" />
                   <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
               </div>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 600 }}>Discard Recording?</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+                <div className="rp-modal-title">Discard Recording?</div>
+                <div className="rp-modal-desc">
                   This will stop the recording and permanently delete all captured audio. This cannot be undone.
                 </div>
               </div>
             </div>
 
             {duration > 0 && (
-              <div style={{
-                padding: '10px 14px',
-                background: 'var(--bg-input)',
-                borderRadius: 'var(--radius)',
-                fontSize: 13,
-                color: 'var(--text-secondary)',
-                marginBottom: 20,
-              }}>
+              <div className="rp-modal-detail">
                 You will lose <strong style={{ color: 'var(--text-primary)' }}>{formatDuration(duration)}</strong> of recorded audio
                 {chunkCount > 0 && <span> ({chunkCount} chunk{chunkCount !== 1 ? 's' : ''})</span>}.
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setShowDiscardModal(false)}
-              >
+            <div className="rp-modal-actions">
+              <button className="btn btn-secondary" onClick={() => setShowDiscardModal(false)}>
                 Keep Recording
               </button>
-              <button
-                className="btn btn-danger"
-                onClick={handleDiscardConfirm}
-              >
+              <button className="btn btn-danger" onClick={handleDiscardConfirm}>
                 Discard
               </button>
             </div>
