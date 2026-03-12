@@ -928,6 +928,62 @@ body {
   margin-top: 2px;
 }
 
+/* Actions dropdown (gear menu) */
+.actions-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  min-width: 190px;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.actions-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.actions-dropdown-item:hover {
+  background: var(--bg-input);
+}
+
+.actions-dropdown-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.actions-dropdown-item:disabled:hover {
+  background: none;
+}
+
+.actions-dropdown-danger {
+  color: var(--accent-primary);
+}
+
+.actions-dropdown-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.actions-dropdown-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
 /* Disk space warning */
 .disk-warning {
   padding: 10px 16px;

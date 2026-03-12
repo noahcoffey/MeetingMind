@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Recording } from '../types';
 import TagEditor from '../components/TagEditor';
-import ExportMenu from '../components/ExportMenu';
 import TranscriptViewer from '../components/TranscriptViewer';
 import AudioPlayer from '../components/AudioPlayer';
 import SearchBar from '../components/SearchBar';
@@ -31,8 +30,10 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
 
   const [audioState, audioControls] = useAudioPlayer();
 
@@ -61,6 +62,19 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
       if (refreshRef.current) clearInterval(refreshRef.current);
     };
   }, []);
+
+  // Close actions menu on click outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false);
+      }
+    }
+    if (showActionsMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showActionsMenu]);
 
   useEffect(() => {
     if (initialMeetingId && meetings.length > 0) {
@@ -431,90 +445,126 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-              {/* Header card — fixed at top */}
-              <div className="card" style={{ flexShrink: 0, marginBottom: 12 }}>
-                {isEditingTitle ? (
-                  <input
-                    ref={titleInputRef}
-                    value={editTitle}
-                    onChange={e => setEditTitle(e.target.value)}
-                    onBlur={saveTitle}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') saveTitle();
-                      if (e.key === 'Escape') setIsEditingTitle(false);
-                    }}
-                    style={{
-                      fontSize: 18,
-                      fontWeight: 600,
-                      marginBottom: 4,
-                      background: 'var(--bg-input)',
-                      border: '1px solid var(--accent-blue)',
-                      borderRadius: 'var(--radius)',
-                      color: 'var(--text-primary)',
-                      padding: '2px 8px',
-                      width: '100%',
-                      outline: 'none',
-                    }}
-                  />
-                ) : (
-                  <h2
-                    style={{ fontSize: 18, marginBottom: 4, cursor: 'pointer' }}
-                    onClick={startEditingTitle}
-                    title="Click to edit title"
-                  >
-                    {selectedMeeting.title || 'Untitled Meeting'}
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 8 }}>&#9998;</span>
-                  </h2>
-                )}
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                  {new Date(selectedMeeting.date).toLocaleString()} &middot;{' '}
-                  {formatDuration(selectedMeeting.duration)} &middot;{' '}
-                  {formatFileSize(selectedMeeting.fileSize)}
-                  {selectedMeeting.transcriptionCost && (
-                    <> &middot; <span style={{ color: 'var(--accent-yellow)' }}>${selectedMeeting.transcriptionCost.estimatedCost.toFixed(4)}</span></>
-                  )}
-                  <span className={`status-badge ${selectedMeeting.status}`} style={{ marginLeft: 12 }}>
-                    {getStatusLabel(selectedMeeting.status)}
-                  </span>
-                </div>
+              {/* Header bar — compact */}
+              <div className="card" style={{ flexShrink: 0, marginBottom: 12, padding: '10px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {/* Title + meta */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {isEditingTitle ? (
+                      <input
+                        ref={titleInputRef}
+                        value={editTitle}
+                        onChange={e => setEditTitle(e.target.value)}
+                        onBlur={saveTitle}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveTitle();
+                          if (e.key === 'Escape') setIsEditingTitle(false);
+                        }}
+                        style={{
+                          fontSize: 15,
+                          fontWeight: 600,
+                          background: 'var(--bg-input)',
+                          border: '1px solid var(--accent-blue)',
+                          borderRadius: 'var(--radius)',
+                          color: 'var(--text-primary)',
+                          padding: '2px 8px',
+                          width: '100%',
+                          outline: 'none',
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{ fontSize: 15, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        onClick={startEditingTitle}
+                        title="Click to edit title"
+                      >
+                        {selectedMeeting.title || 'Untitled Meeting'}
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>&#9998;</span>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      {new Date(selectedMeeting.date).toLocaleString()} &middot;{' '}
+                      {formatDuration(selectedMeeting.duration)} &middot;{' '}
+                      {formatFileSize(selectedMeeting.fileSize)}
+                      {selectedMeeting.transcriptionCost && (
+                        <> &middot; <span style={{ color: 'var(--accent-yellow)' }}>${selectedMeeting.transcriptionCost.estimatedCost.toFixed(4)}</span></>
+                      )}
+                      <span className={`status-badge ${selectedMeeting.status}`} style={{ marginLeft: 8 }}>
+                        {getStatusLabel(selectedMeeting.status)}
+                      </span>
+                    </div>
+                  </div>
 
-                {/* Tags */}
-                <div style={{ marginBottom: 12 }}>
-                  <TagEditor
-                    tags={selectedMeeting.tags || []}
-                    allTags={allTags}
-                    onChange={handleTagsChange}
-                  />
-                </div>
-
-                {/* Action buttons */}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {/* Primary action (pipeline step) */}
                   {selectedMeeting.status === 'recorded' && (
-                    <button className="btn btn-primary" onClick={handleTranscribe} disabled={isTranscribing}>
+                    <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handleTranscribe} disabled={isTranscribing}>
                       {isTranscribing ? 'Transcribing...' : 'Transcribe'}
                     </button>
                   )}
                   {selectedMeeting.status === 'transcribed' && (
-                    <button className="btn btn-primary" onClick={handleGenerateNotes} disabled={isStreaming}>
+                    <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handleGenerateNotes} disabled={isStreaming}>
                       {isStreaming ? 'Generating...' : 'Generate Notes'}
                     </button>
                   )}
-                  {selectedMeeting.status === 'complete' && (
-                    <>
-                      <button className="btn btn-primary" onClick={handleSaveNotes}>Save Notes</button>
-                      <button className="btn btn-secondary" onClick={handleSaveToObsidian}>Save to Obsidian</button>
-                      <ExportMenu recordingId={selectedMeeting.id} onToast={showToast} />
-                      <button className="btn btn-secondary" onClick={handleGenerateNotes} disabled={isStreaming}>
-                        Regenerate
-                      </button>
-                    </>
-                  )}
-                  <button className="btn btn-ghost" onClick={() => window.meetingMind.openInFinder(selectedMeeting.audioPath)}>
-                    Open in Finder
-                  </button>
-                  <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(true)} style={{ color: 'var(--accent-primary)' }}>
-                    Delete
-                  </button>
+
+                  {/* Tags inline */}
+                  <div style={{ flexShrink: 0 }}>
+                    <TagEditor
+                      tags={selectedMeeting.tags || []}
+                      allTags={allTags}
+                      onChange={handleTagsChange}
+                    />
+                  </div>
+
+                  {/* Gear menu */}
+                  <div ref={actionsMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => setShowActionsMenu(prev => !prev)}
+                      style={{ padding: '4px 6px', lineHeight: 1 }}
+                      title="Actions"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                    </button>
+                    {showActionsMenu && (
+                      <div className="actions-dropdown">
+                        {selectedMeeting.status === 'complete' && (
+                          <>
+                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSaveNotes(); }}>
+                              Save Notes
+                            </button>
+                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSaveToObsidian(); }}>
+                              Save to Obsidian
+                            </button>
+                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleGenerateNotes(); }} disabled={isStreaming}>
+                              Regenerate Notes
+                            </button>
+                            <div className="actions-dropdown-sep" />
+                          </>
+                        )}
+                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).copyNotesToClipboard(selectedMeeting.id); showToast(r.success ? 'Notes copied to clipboard' : `Copy failed: ${r.error}`); }}>
+                          Copy to Clipboard
+                        </button>
+                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); showToast('Generating PDF...'); const r = await (window.meetingMind as any).exportAsPDF(selectedMeeting.id); showToast(r.success ? `PDF saved: ${r.path}` : `PDF export failed: ${r.error}`); }}>
+                          Export as PDF
+                        </button>
+                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).emailNotes(selectedMeeting.id); if (!r.success) showToast(`Email failed: ${r.error}`); }}>
+                          Email to Attendees
+                        </button>
+                        <div className="actions-dropdown-sep" />
+                        <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); window.meetingMind.openInFinder(selectedMeeting.audioPath); }}>
+                          Open in Finder
+                        </button>
+                        <div className="actions-dropdown-sep" />
+                        <button className="actions-dropdown-item actions-dropdown-danger" onClick={() => { setShowActionsMenu(false); setShowDeleteConfirm(true); }}>
+                          Delete Meeting
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
