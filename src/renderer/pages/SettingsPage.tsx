@@ -157,16 +157,6 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
               </div>
             </div>
           </div>
-          <div className="settings-row">
-            <label className="form-label settings-toggle">
-              <input
-                type="checkbox"
-                checked={settings.showCostData || false}
-                onChange={e => updateSetting('showCostData', e.target.checked)}
-              />
-              Show transcription cost in meeting detail
-            </label>
-          </div>
         </div>
 
         {/* ─── Recording & Transcription ─── */}
@@ -253,6 +243,14 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
               onChange={e => updateSetting('autoTranscribe', e.target.checked)}
             />
             Auto-transcribe after recording stops
+          </label>
+          <label className="form-label settings-toggle">
+            <input
+              type="checkbox"
+              checked={settings.showCostData || false}
+              onChange={e => updateSetting('showCostData', e.target.checked)}
+            />
+            Show transcription cost in meeting detail
           </label>
         </div>
 
