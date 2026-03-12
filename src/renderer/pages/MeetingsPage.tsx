@@ -447,8 +447,8 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
               {/* Header bar — compact */}
               <div className="card" style={{ flexShrink: 0, marginBottom: 12, padding: '10px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {/* Title + meta */}
+                {/* Row 1: title + meta + actions */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {isEditingTitle ? (
                       <input
@@ -482,7 +482,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
                         <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>&#9998;</span>
                       </div>
                     )}
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, whiteSpace: 'nowrap' }}>
                       {new Date(selectedMeeting.date).toLocaleString()} &middot;{' '}
                       {formatDuration(selectedMeeting.duration)} &middot;{' '}
                       {formatFileSize(selectedMeeting.fileSize)}
@@ -506,15 +506,6 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
                       {isStreaming ? 'Generating...' : 'Generate Notes'}
                     </button>
                   )}
-
-                  {/* Tags inline */}
-                  <div style={{ flexShrink: 0 }}>
-                    <TagEditor
-                      tags={selectedMeeting.tags || []}
-                      allTags={allTags}
-                      onChange={handleTagsChange}
-                    />
-                  </div>
 
                   {/* Gear menu */}
                   <div ref={actionsMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
@@ -565,6 +556,14 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
                       </div>
                     )}
                   </div>
+                </div>
+                {/* Row 2: tags */}
+                <div style={{ marginTop: 6 }}>
+                  <TagEditor
+                    tags={selectedMeeting.tags || []}
+                    allTags={allTags}
+                    onChange={handleTagsChange}
+                  />
                 </div>
               </div>
 
