@@ -34,6 +34,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
+  const selectedMeetingRef = useRef<Recording | null>(null);
 
   const [audioState, audioControls] = useAudioPlayer();
 
@@ -55,10 +56,17 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
       }
     });
 
+    // Listen for background notes completion (e.g. auto-pipeline from RecordPage)
+    const unsubNotesComplete = window.meetingMind.on('notes:complete', () => {
+      // Refresh meeting list and selected meeting to pick up new notes/status
+      loadMeetings();
+      refreshSelectedMeeting();
+    });
+
     return () => {
       unsubProgress();
+      unsubNotesComplete();
       window.meetingMind.removeAllListeners('notes:stream');
-      window.meetingMind.removeAllListeners('notes:complete');
       if (refreshRef.current) clearInterval(refreshRef.current);
     };
   }, []);
@@ -97,11 +105,22 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
     } catch {}
   }
 
+  // Keep ref in sync so event listeners can access the latest selection
+  useEffect(() => {
+    selectedMeetingRef.current = selectedMeeting;
+  }, [selectedMeeting]);
+
   async function refreshSelectedMeeting() {
-    if (!selectedMeeting) return;
-    const updated = await window.meetingMind.getRecording(selectedMeeting.id);
+    const current = selectedMeetingRef.current;
+    if (!current) return;
+    const updated = await window.meetingMind.getRecording(current.id);
     if (updated) {
       setSelectedMeeting(updated);
+      // Load notes content if status is now complete
+      if (updated.status === 'complete' || updated.status === 'transcribed') {
+        const notes = await window.meetingMind.getNotes(updated.id);
+        if (notes) setNotesContent(notes);
+      }
       loadMeetings();
       loadAllTags();
     }
@@ -165,19 +184,20 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
     setIsStreaming(true);
     setIsLoadingNotes(true);
 
+    // Replace stream listener for manual generation (shows chunks live)
     window.meetingMind.removeAllListeners('notes:stream');
-    window.meetingMind.removeAllListeners('notes:complete');
 
     window.meetingMind.on('notes:stream', (chunk: unknown) => {
       setIsLoadingNotes(false);
       setNotesContent(prev => prev + (chunk as string));
     });
 
-    window.meetingMind.on('notes:complete', () => {
+    // The persistent notes:complete listener in useEffect handles
+    // refreshing the meeting data. We just need to clear streaming state.
+    const unsubManual = window.meetingMind.on('notes:complete', () => {
       setIsStreaming(false);
       setIsLoadingNotes(false);
-      refreshSelectedMeeting();
-      loadMeetings();
+      unsubManual();
     });
 
     const result = await window.meetingMind.generateNotes(selectedMeeting.id);
