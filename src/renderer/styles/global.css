@@ -1025,15 +1025,42 @@ body {
 
 /* Settings page */
 .settings-section {
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
 .settings-section h2 {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  margin-bottom: 16px;
-  padding-bottom: 8px;
+  margin-bottom: 14px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--border-color);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+}
+
+.settings-row {
+  display: flex;
+  gap: 16px;
+}
+
+.settings-toggle {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.key-saved {
+  color: var(--accent-green);
+  font-weight: 400;
 }
 
 /* Markdown content */

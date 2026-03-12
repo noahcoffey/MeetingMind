@@ -31,6 +31,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
   const [editTitle, setEditTitle] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [showCostData, setShowCostData] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
@@ -41,6 +42,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
   useEffect(() => {
     loadMeetings();
     loadAllTags();
+    window.meetingMind.getSettings().then((s: any) => setShowCostData(!!s.showCostData));
 
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
       const { status, message } = data as { status: string; message: string };
@@ -506,7 +508,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
                       {new Date(selectedMeeting.date).toLocaleString()} &middot;{' '}
                       {formatDuration(selectedMeeting.duration)} &middot;{' '}
                       {formatFileSize(selectedMeeting.fileSize)}
-                      {selectedMeeting.transcriptionCost && (
+                      {showCostData && selectedMeeting.transcriptionCost && (
                         <> &middot; <span style={{ color: 'var(--accent-yellow)' }}>${selectedMeeting.transcriptionCost.estimatedCost.toFixed(4)}</span></>
                       )}
                       <span className={`status-badge ${selectedMeeting.status}`} style={{ marginLeft: 8 }}>

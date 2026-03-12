@@ -79,12 +79,10 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
   }
 
   async function handleSave() {
-    // Save settings
     for (const [key, value] of Object.entries(settings)) {
       await window.meetingMind.setSetting(key, value);
     }
 
-    // Save API keys if changed
     if (assemblyAiKey) {
       await window.meetingMind.setApiKey('assemblyai', assemblyAiKey);
       setHasAssemblyKey(true);
@@ -120,44 +118,95 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
     if (folder) updateSetting(key, folder);
   }
 
+  const provider = settings.transcriptionProvider || 'assemblyai';
+  const notesProvider = settings.notesProvider || 'cli';
+
   return (
     <>
       <div className="page-header">
         <h1>Settings</h1>
       </div>
-      <div className="page-content">
+      <div className="page-content" style={{ maxWidth: 820 }}>
 
-        {/* Transcription Provider */}
+        {/* ─── General ─── */}
         <div className="settings-section">
-          <h2>Transcription</h2>
-          <div className="form-group">
-            <label className="form-label">Provider</label>
-            <select
-              className="form-select"
-              value={settings.transcriptionProvider || 'assemblyai'}
-              onChange={e => updateSetting('transcriptionProvider', e.target.value)}
-            >
-              <option value="assemblyai">AssemblyAI — $0.17/hr (speaker diarization)</option>
-              <option value="openai-whisper">OpenAI Whisper — $0.36/hr (no speaker ID)</option>
-              <option value="deepgram">Deepgram Nova-2 — $0.26/hr (speaker diarization)</option>
-            </select>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-              {(settings.transcriptionProvider || 'assemblyai') === 'assemblyai' && 'High accuracy with speaker identification. Processes asynchronously.'}
-              {settings.transcriptionProvider === 'openai-whisper' && 'Great accuracy, no speaker diarization. 25MB file size limit per request.'}
-              {settings.transcriptionProvider === 'deepgram' && 'Fast processing with speaker identification. Real-time capable.'}
+          <h2>General</h2>
+          <div className="settings-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Your Name</label>
+              <input
+                type="text"
+                className="form-input"
+                placeholder="Used in meeting notes to identify you"
+                value={settings.userName || ''}
+                onChange={e => updateSetting('userName', e.target.value)}
+              />
             </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Recording Output Folder</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.recordingOutputFolder || ''}
+                  readOnly
+                />
+                <button className="btn btn-secondary" onClick={() => handleSelectFolder('recordingOutputFolder')}>
+                  Browse
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="settings-row">
+            <label className="form-label settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.showCostData || false}
+                onChange={e => updateSetting('showCostData', e.target.checked)}
+              />
+              Show transcription cost in meeting detail
+            </label>
           </div>
         </div>
 
-        {/* API Keys */}
+        {/* ─── Recording & Transcription ─── */}
         <div className="settings-section">
-          <h2>API Keys</h2>
+          <h2>Recording & Transcription</h2>
+          <div className="settings-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Audio Input Device</label>
+              <select
+                className="form-select"
+                value={settings.defaultInputDevice || 'default'}
+                onChange={e => updateSetting('defaultInputDevice', e.target.value)}
+              >
+                <option value="default">System Default</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Transcription Provider</label>
+              <select
+                className="form-select"
+                value={provider}
+                onChange={e => updateSetting('transcriptionProvider', e.target.value)}
+              >
+                <option value="assemblyai">AssemblyAI — $0.17/hr</option>
+                <option value="openai-whisper">OpenAI Whisper — $0.36/hr</option>
+                <option value="deepgram">Deepgram Nova-2 — $0.26/hr</option>
+              </select>
+              <div className="form-hint">
+                {provider === 'assemblyai' && 'Speaker diarization. Async processing.'}
+                {provider === 'openai-whisper' && 'No speaker ID. 25 MB limit per request.'}
+                {provider === 'deepgram' && 'Speaker diarization. Real-time capable.'}
+              </div>
+            </div>
+          </div>
 
-          {/* Show key field for current transcription provider */}
-          {(settings.transcriptionProvider || 'assemblyai') === 'assemblyai' && (
+          {/* API key for selected provider */}
+          {provider === 'assemblyai' && (
             <div className="form-group">
               <label className="form-label">
-                AssemblyAI API Key {hasAssemblyKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
+                AssemblyAI API Key {hasAssemblyKey && <span className="key-saved">(saved)</span>}
               </label>
               <input
                 type="password"
@@ -168,11 +217,10 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
               />
             </div>
           )}
-
-          {settings.transcriptionProvider === 'openai-whisper' && (
+          {provider === 'openai-whisper' && (
             <div className="form-group">
               <label className="form-label">
-                OpenAI API Key {hasOpenaiKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
+                OpenAI API Key {hasOpenaiKey && <span className="key-saved">(saved)</span>}
               </label>
               <input
                 type="password"
@@ -183,11 +231,10 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
               />
             </div>
           )}
-
-          {settings.transcriptionProvider === 'deepgram' && (
+          {provider === 'deepgram' && (
             <div className="form-group">
               <label className="form-label">
-                Deepgram API Key {hasDeepgramKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
+                Deepgram API Key {hasDeepgramKey && <span className="key-saved">(saved)</span>}
               </label>
               <input
                 type="password"
@@ -199,11 +246,54 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
             </div>
           )}
 
-          {/* Anthropic key — only needed for API-based notes generation */}
-          {(settings.notesProvider || 'cli') === 'api' && (
+          <label className="form-label settings-toggle">
+            <input
+              type="checkbox"
+              checked={settings.autoTranscribe || false}
+              onChange={e => updateSetting('autoTranscribe', e.target.checked)}
+            />
+            Auto-transcribe after recording stops
+          </label>
+        </div>
+
+        {/* ─── AI Notes ─── */}
+        <div className="settings-section">
+          <h2>AI Notes</h2>
+          <div className="settings-row">
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Notes Provider</label>
+              <select
+                className="form-select"
+                value={notesProvider}
+                onChange={e => updateSetting('notesProvider', e.target.value)}
+              >
+                <option value="cli">Claude Code CLI (subscription)</option>
+                <option value="api">Anthropic API (credits)</option>
+              </select>
+              <div className="form-hint">
+                {notesProvider === 'cli'
+                  ? 'Runs the "claude" CLI. Requires Claude Code installed and authenticated.'
+                  : 'Uses the Anthropic API directly. Requires an API key.'}
+              </div>
+            </div>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Model</label>
+              <select
+                className="form-select"
+                value={settings.claudeModel || 'claude-sonnet-4-20250514'}
+                onChange={e => updateSetting('claudeModel', e.target.value)}
+              >
+                <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                <option value="claude-opus-4-20250514">Claude Opus 4</option>
+                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+              </select>
+            </div>
+          </div>
+
+          {notesProvider === 'api' && (
             <div className="form-group">
               <label className="form-label">
-                Anthropic API Key {hasAnthropicKey && <span style={{ color: 'var(--accent-green)' }}>(saved)</span>}
+                Anthropic API Key {hasAnthropicKey && <span className="key-saved">(saved)</span>}
               </label>
               <input
                 type="password"
@@ -214,199 +304,12 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
               />
             </div>
           )}
-        </div>
-
-        {/* User Info */}
-        <div className="settings-section">
-          <h2>User</h2>
-          <div className="form-group">
-            <label className="form-label">Your Name</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Your name (used in meeting notes)"
-              value={settings.userName || ''}
-              onChange={e => updateSetting('userName', e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* Audio */}
-        <div className="settings-section">
-          <h2>Audio</h2>
-          <div className="form-group">
-            <label className="form-label">Default Audio Input Device</label>
-            <select
-              className="form-select"
-              value={settings.defaultInputDevice || 'default'}
-              onChange={e => updateSetting('defaultInputDevice', e.target.value)}
-            >
-              <option value="default">System Default</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={settings.autoTranscribe || false}
-                onChange={e => updateSetting('autoTranscribe', e.target.checked)}
-              />
-              Auto-transcribe after recording stops
-            </label>
-          </div>
-        </div>
-
-        {/* Output */}
-        <div className="settings-section">
-          <h2>Output</h2>
-          <div className="form-group">
-            <label className="form-label">Recording Output Folder</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                className="form-input"
-                value={settings.recordingOutputFolder || ''}
-                readOnly
-              />
-              <button className="btn btn-secondary" onClick={() => handleSelectFolder('recordingOutputFolder')}>
-                Browse
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Obsidian */}
-        <div className="settings-section">
-          <h2>Obsidian</h2>
-          <div className="form-group">
-            <label className="form-label">Vault Path</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                className="form-input"
-                value={settings.obsidianVaultPath || ''}
-                readOnly
-                placeholder="Select your Obsidian vault folder"
-              />
-              <button className="btn btn-secondary" onClick={() => handleSelectFolder('obsidianVaultPath')}>
-                Browse
-              </button>
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Subfolder</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Meeting Notes"
-              value={settings.obsidianSubfolder || ''}
-              onChange={e => updateSetting('obsidianSubfolder', e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Daily Notes Folder</label>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="(root of vault)"
-              value={settings.obsidianDailyNotesFolder || ''}
-              onChange={e => updateSetting('obsidianDailyNotesFolder', e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={settings.autoSaveToObsidian || false}
-                onChange={e => updateSetting('autoSaveToObsidian', e.target.checked)}
-              />
-              Auto-save notes to Obsidian after generation
-            </label>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-              Automatically saves meeting notes to your vault when note generation completes. Requires a vault path above.
-            </div>
-          </div>
-        </div>
-
-        {/* Calendar */}
-        <div className="settings-section">
-          <h2>Calendar Integration</h2>
 
           <div className="form-group">
-            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="checkbox"
-                checked={settings.icsCalendarEnabled || false}
-                onChange={e => updateSetting('icsCalendarEnabled', e.target.checked)}
-              />
-              Use ICS Calendar URL
-            </label>
-          </div>
-          {settings.icsCalendarEnabled && (
-            <div className="form-group">
-              <label className="form-label">ICS Feed URL</label>
-              <input
-                type="url"
-                className="form-input"
-                placeholder="https://calendar.example.com/feed.ics"
-                value={settings.icsCalendarUrl || ''}
-                onChange={e => updateSetting('icsCalendarUrl', e.target.value)}
-              />
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                Paste a webcal/ICS URL from Google Calendar, Outlook, or any calendar app. Events within ±2 hours are shown on the Record screen.
-              </div>
-            </div>
-          )}
-
-          <div style={{ fontSize: 13, color: 'var(--text-muted)', margin: '12px 0 8px' }}>
-            Or connect via OAuth:
-          </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <button className="btn btn-secondary" onClick={() => window.meetingMind.connectGoogleCalendar()}>
-              Connect Google Calendar
-            </button>
-            <button className="btn btn-secondary" onClick={() => window.meetingMind.connectMicrosoftCalendar()}>
-              Connect Microsoft 365
-            </button>
-          </div>
-        </div>
-
-        {/* Claude */}
-        <div className="settings-section">
-          <h2>Claude AI</h2>
-          <div className="form-group">
-            <label className="form-label">Notes Provider</label>
-            <select
-              className="form-select"
-              value={settings.notesProvider || 'cli'}
-              onChange={e => updateSetting('notesProvider', e.target.value)}
-            >
-              <option value="cli">Claude Code CLI (uses your subscription)</option>
-              <option value="api">Anthropic API (uses API credits)</option>
-            </select>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-              {(settings.notesProvider || 'cli') === 'cli'
-                ? 'Runs the "claude" CLI in print mode. Requires Claude Code to be installed and authenticated.'
-                : 'Uses the Anthropic API directly. Requires an API key above.'}
-            </div>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Model</label>
-            <select
-              className="form-select"
-              value={settings.claudeModel || 'claude-sonnet-4-20250514'}
-              onChange={e => updateSetting('claudeModel', e.target.value)}
-            >
-              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-              <option value="claude-opus-4-20250514">Claude Opus 4</option>
-              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-            </select>
-          </div>
-          <div className="form-group">
-            <label className="form-label">Meeting Notes Prompt Template</label>
+            <label className="form-label">Prompt Template</label>
             <textarea
               className="form-textarea"
-              rows={10}
+              rows={8}
               value={settings.notesPromptTemplate || DEFAULT_PROMPT}
               onChange={e => updateSetting('notesPromptTemplate', e.target.value)}
             />
@@ -420,8 +323,99 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
           </div>
         </div>
 
+        {/* ─── Calendar & Obsidian side-by-side ─── */}
+        <div className="settings-row" style={{ gap: 24, alignItems: 'flex-start' }}>
+          {/* Calendar */}
+          <div className="settings-section" style={{ flex: 1, marginBottom: 0 }}>
+            <h2>Calendar</h2>
+            <label className="form-label settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.icsCalendarEnabled || false}
+                onChange={e => updateSetting('icsCalendarEnabled', e.target.checked)}
+              />
+              Use ICS Calendar URL
+            </label>
+            {settings.icsCalendarEnabled && (
+              <div className="form-group" style={{ marginTop: 8 }}>
+                <input
+                  type="url"
+                  className="form-input"
+                  placeholder="https://calendar.example.com/feed.ics"
+                  value={settings.icsCalendarUrl || ''}
+                  onChange={e => updateSetting('icsCalendarUrl', e.target.value)}
+                />
+                <div className="form-hint">
+                  Paste a webcal/ICS URL. Events within ±2 hours show on the Record screen.
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 8px' }}>
+              Or connect via OAuth:
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => window.meetingMind.connectGoogleCalendar()}>
+                Google
+              </button>
+              <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => window.meetingMind.connectMicrosoftCalendar()}>
+                Microsoft 365
+              </button>
+            </div>
+          </div>
+
+          {/* Obsidian */}
+          <div className="settings-section" style={{ flex: 1, marginBottom: 0 }}>
+            <h2>Obsidian</h2>
+            <div className="form-group">
+              <label className="form-label">Vault Path</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.obsidianVaultPath || ''}
+                  readOnly
+                  placeholder="Select your Obsidian vault folder"
+                />
+                <button className="btn btn-secondary" onClick={() => handleSelectFolder('obsidianVaultPath')}>
+                  Browse
+                </button>
+              </div>
+            </div>
+            <div className="settings-row">
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Subfolder</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Meeting Notes"
+                  value={settings.obsidianSubfolder || ''}
+                  onChange={e => updateSetting('obsidianSubfolder', e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Daily Notes Folder</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="(root of vault)"
+                  value={settings.obsidianDailyNotesFolder || ''}
+                  onChange={e => updateSetting('obsidianDailyNotesFolder', e.target.value)}
+                />
+              </div>
+            </div>
+            <label className="form-label settings-toggle">
+              <input
+                type="checkbox"
+                checked={settings.autoSaveToObsidian || false}
+                onChange={e => updateSetting('autoSaveToObsidian', e.target.checked)}
+              />
+              Auto-save notes to Obsidian
+            </label>
+          </div>
+        </div>
+
         {/* Save */}
-        <div style={{ position: 'sticky', bottom: 0, padding: '16px 0', background: 'var(--bg-primary)' }}>
+        <div style={{ position: 'sticky', bottom: 0, padding: '16px 0', background: 'var(--bg-primary)', marginTop: 32 }}>
           <button className="btn btn-primary" onClick={handleSave} style={{ width: '100%' }}>
             {saved ? 'Saved!' : 'Save Settings'}
           </button>
