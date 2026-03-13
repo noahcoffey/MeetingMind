@@ -106,7 +106,7 @@ export default function AudioPlayer({
           borderRadius: '50%',
           background: 'var(--accent-blue)',
           transform: 'translateX(-50%)',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+          boxShadow: 'var(--shadow)',
         }} />
       </div>
 

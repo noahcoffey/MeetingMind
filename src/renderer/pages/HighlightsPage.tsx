@@ -222,7 +222,7 @@ export default function HighlightsPage() {
                     transition: 'border-color 150ms',
                   }}
                   onClick={() => handleLoadSaved(h)}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-blue, #3b82f6)'}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-blue)'}
                   onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 14, height: 14, flexShrink: 0, color: 'var(--text-muted)' }}>
@@ -324,9 +324,9 @@ export default function HighlightsPage() {
                         fontSize: 11,
                         padding: '3px 8px',
                         borderRadius: 12,
-                        background: m.hasNotes ? 'var(--accent-blue-bg, rgba(59,130,246,0.1))' : 'var(--bg-secondary)',
-                        color: m.hasNotes ? 'var(--accent-blue, #3b82f6)' : 'var(--text-muted)',
-                        border: `1px solid ${m.hasNotes ? 'var(--accent-blue, #3b82f6)22' : 'var(--border-color)'}`,
+                        background: m.hasNotes ? 'var(--accent-blue-tint)' : 'var(--bg-secondary)',
+                        color: m.hasNotes ? 'var(--accent-blue)' : 'var(--text-muted)',
+                        border: `1px solid ${m.hasNotes ? 'var(--accent-blue)' : 'var(--border-color)'}`,
                       }}
                       title={`${m.date} — ${m.hasNotes ? 'Has notes' : 'No notes yet'}`}
                     >
@@ -355,10 +355,10 @@ export default function HighlightsPage() {
           <div style={{
             marginTop: 12,
             padding: '10px 14px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.2)',
+            background: 'var(--accent-red-subtle)',
+            border: '1px solid var(--accent-red-tint)',
             borderRadius: 'var(--radius)',
-            color: '#ef4444',
+            color: 'var(--accent-primary)',
             fontSize: 13,
           }}>
             {error}
@@ -444,7 +444,7 @@ export default function HighlightsPage() {
       {showDeleteConfirm && (
         <div
           style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            position: 'fixed', inset: 0, background: 'var(--overlay-backdrop)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
           }}
           onClick={() => setShowDeleteConfirm(null)}
@@ -467,7 +467,7 @@ export default function HighlightsPage() {
               <button
                 className="btn btn-primary"
                 onClick={() => handleDeleteSaved(showDeleteConfirm)}
-                style={{ fontSize: 13, background: '#ef4444' }}
+                style={{ fontSize: 13, background: 'var(--accent-primary)' }}
               >
                 Delete
               </button>

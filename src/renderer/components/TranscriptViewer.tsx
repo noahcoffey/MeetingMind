@@ -130,7 +130,7 @@ export default function TranscriptViewer({
               padding: '4px 16px',
               paddingTop: showSpeaker ? 12 : 4,
               cursor: 'pointer',
-              background: isActive ? 'rgba(59, 130, 246, 0.08)' : 'transparent',
+              background: isActive ? 'var(--accent-blue-subtle)' : 'transparent',
               borderLeft: isActive ? `3px solid ${color}` : '3px solid transparent',
               transition: 'background 150ms ease',
             }}

@@ -176,7 +176,7 @@ export default function AnalyticsPage() {
                   <div key={t.tag} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{
                       padding: '2px 8px',
-                      background: 'rgba(59, 130, 246, 0.15)',
+                      background: 'var(--accent-blue-tint)',
                       color: 'var(--accent-blue)',
                       borderRadius: 10,
                       fontSize: 11,

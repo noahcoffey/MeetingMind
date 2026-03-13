@@ -273,6 +273,32 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
     refreshSelectedMeeting();
   }
 
+  async function handleNotesCorrection(data: { original: string; corrected: string }) {
+    if (!selectedMeeting) return;
+
+    // Replace all occurrences in the notes content
+    const updatedNotes = notesContent.split(data.original).join(data.corrected);
+    setNotesContent(updatedNotes);
+
+    // Persist to disk
+    await (window.meetingMind as any).updateNotes(selectedMeeting.id, updatedNotes);
+
+    // Add to custom vocabulary
+    const settings = await window.meetingMind.getSettings();
+    const vocab = (settings.customVocabulary || []) as { term: string; variants: string[] }[];
+    const existing = vocab.find((e: any) => e.term === data.corrected);
+    if (existing) {
+      if (!existing.variants.includes(data.original)) {
+        existing.variants.push(data.original);
+      }
+    } else {
+      vocab.push({ term: data.corrected, variants: [data.original] });
+    }
+    await window.meetingMind.setSetting('customVocabulary', vocab);
+
+    showToast(`Corrected "${data.original}" → "${data.corrected}"`);
+  }
+
   function showToast(msg: string) {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 3000);
@@ -405,7 +431,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
                           {rec.tags.map(t => (
                             <span key={t} style={{
                               padding: '1px 6px',
-                              background: 'rgba(59, 130, 246, 0.12)',
+                              background: 'var(--accent-blue-tint)',
                               color: 'var(--accent-blue)',
                               borderRadius: 8,
                               fontSize: 10,
@@ -618,7 +644,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
 
               {/* Transcription error */}
               {!isTranscribing && transcriptionStatus && transcriptionStatus.startsWith('Error') && (
-                <div className="card" style={{ borderColor: 'rgba(231, 76, 60, 0.3)' }}>
+                <div className="card" style={{ borderColor: 'var(--accent-red-glow)' }}>
                   <div style={{ color: 'var(--accent-primary)', fontSize: 13 }}>{transcriptionStatus}</div>
                   <button className="btn btn-secondary" onClick={handleTranscribe} style={{ marginTop: 8 }}>Retry</button>
                 </div>
@@ -696,7 +722,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
                       overflowY: 'auto',
                     }}>
                       {notesContent ? (
-                        <MarkdownRenderer content={notesContent} />
+                        <MarkdownRenderer content={notesContent} onCorrection={handleNotesCorrection} />
                       ) : (
                         <div style={{ color: 'var(--text-muted)' }}>Notes will appear here after generation.</div>
                       )}
@@ -745,13 +771,13 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && selectedMeeting && (
         <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+          position: 'fixed', inset: 0, background: 'var(--overlay-backdrop)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
         }} onClick={() => setShowDeleteConfirm(false)}>
           <div style={{
             background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)',
             border: '1px solid var(--border-color)', padding: 24,
-            width: 400, maxWidth: '90vw', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+            width: 400, maxWidth: '90vw', boxShadow: 'var(--shadow-modal)',
           }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
               <div style={{ color: 'var(--accent-primary)', flexShrink: 0, marginTop: 2 }}>
@@ -772,7 +798,7 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
               <button className="btn" onClick={handleDeleteMeeting}
-                style={{ background: 'var(--accent-primary)', color: '#fff' }}>
+                style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}>
                 Delete
               </button>
             </div>

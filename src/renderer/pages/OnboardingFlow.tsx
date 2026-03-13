@@ -295,7 +295,7 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
                       padding: '10px 14px',
                       borderRadius: 'var(--radius)',
                       border: `1px solid ${transcriptionProvider === p.id ? 'var(--accent-blue)' : 'var(--border-color)'}`,
-                      background: transcriptionProvider === p.id ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg-card)',
+                      background: transcriptionProvider === p.id ? 'var(--accent-blue-subtle)' : 'var(--bg-card)',
                       cursor: 'pointer',
                       transition: 'all 150ms ease',
                     }}

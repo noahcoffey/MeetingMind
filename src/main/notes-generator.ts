@@ -96,7 +96,7 @@ function buildPrompt(recording: any, transcript: string): string {
   const duration = formatDuration(recording.duration);
   const userContext = recording.userContext || 'None provided';
 
-  return template
+  let result = template
     .replace(/\{\{event_title\}\}/g, eventTitle)
     .replace(/\{\{date\}\}/g, date)
     .replace(/\{\{attendees\}\}/g, attendees)
@@ -105,6 +105,20 @@ function buildPrompt(recording: any, transcript: string): string {
     .replace(/\{\{user_name\}\}/g, userName)
     .replace(/\{\{transcript\}\}/g, transcript)
     .replace(/\{\{suggested_title\}\}/g, eventTitle);
+
+  // Append custom vocabulary hint if any terms are configured
+  const customVocabulary = getSetting('customVocabulary') || [];
+  if (customVocabulary.length > 0) {
+    const vocabLines = customVocabulary.map(entry => {
+      if (entry.variants && entry.variants.length > 0) {
+        return `- "${entry.term}" (often mistranscribed as: ${entry.variants.join(', ')})`;
+      }
+      return `- "${entry.term}"`;
+    });
+    result += `\n\nIMPORTANT — Custom vocabulary: The following names, terms, and phrases must be spelled exactly as shown. The transcription may have misspelled them. When you encounter any of the listed mistranscriptions (or similar-sounding variations), use the correct spelling instead:\n${vocabLines.join('\n')}`;
+  }
+
+  return result;
 }
 
 // Sanitize filename for Obsidian and filesystem compatibility
@@ -303,6 +317,21 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
   } catch (err: any) {
     log('error', 'Notes generation failed', err);
     updateRecordingStatus(recordingId, 'transcribed');
+    return { success: false, error: err.message };
+  }
+}
+
+export function updateNotes(recordingId: string, content: string): { success: boolean; error?: string } {
+  const recording = getRecording(recordingId);
+  if (!recording) return { success: false, error: 'Recording not found' };
+
+  const outputDir = path.dirname(recording.audioPath);
+  const notesPath = path.join(outputDir, 'notes.md');
+
+  try {
+    fs.writeFileSync(notesPath, content);
+    return { success: true };
+  } catch (err: any) {
     return { success: false, error: err.message };
   }
 }

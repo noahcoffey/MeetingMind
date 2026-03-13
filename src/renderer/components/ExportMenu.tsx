@@ -63,7 +63,7 @@ export default function ExportMenu({ recordingId, onToast }: ExportMenuProps) {
           background: 'var(--bg-card)',
           border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius)',
-          boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          boxShadow: 'var(--shadow-dropdown)',
           zIndex: 50,
           minWidth: 180,
           overflow: 'hidden',

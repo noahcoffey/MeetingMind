@@ -1,5 +1,10 @@
 import Store from 'electron-store';
 
+export interface VocabularyEntry {
+  term: string;
+  variants: string[];
+}
+
 export interface AppSettings {
   userName: string;
   defaultInputDevice: string;
@@ -23,6 +28,8 @@ export interface AppSettings {
   showTrayIcon: boolean;
   showCostData: boolean;
   speakerDirectory: string[];
+  customVocabulary: VocabularyEntry[];
+  theme: 'dark' | 'light' | 'system' | 'ember' | 'forest' | 'nord' | 'violet' | 'ocean' | 'slate';
 }
 
 const defaults: AppSettings = {
@@ -48,6 +55,8 @@ const defaults: AppSettings = {
   showTrayIcon: true,
   showCostData: false,
   speakerDirectory: [],
+  customVocabulary: [],
+  theme: 'dark' as const,
 };
 
 let store: Store<AppSettings>;

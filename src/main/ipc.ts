@@ -13,7 +13,7 @@ import {
   deleteRecording,
 } from './recording-manager';
 import { startTranscription, getTranscriptionStatus } from './transcription';
-import { generateNotes, getNotes, saveNotes, saveToObsidian } from './notes-generator';
+import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian } from './notes-generator';
 import { getCalendarEvents, invalidateCalendarCache, connectGoogle, connectMicrosoft, disconnectCalendar } from './calendar';
 import { listSystemAudioDevices } from './system-audio';
 import { copyNotesToClipboard, exportNotesAsPDF, emailNotes } from './export';
@@ -155,6 +155,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('notes:get', async (_event, recordingId: string) => {
     return getNotes(recordingId);
+  });
+
+  ipcMain.handle('notes:update', async (_event, recordingId: string, content: string) => {
+    return updateNotes(recordingId, content);
   });
 
   ipcMain.handle('notes:save', async (_event, recordingId: string, filename: string) => {

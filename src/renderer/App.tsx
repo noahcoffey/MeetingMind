@@ -31,11 +31,21 @@ export default function App() {
     try {
       const s = await window.meetingMind.getSettings();
       setSettings(s);
+      applyTheme(s.theme as string || 'dark');
       if (!s.onboardingComplete) {
         setShowOnboarding(true);
       }
     } catch {
       setSettings({});
+    }
+  }
+
+  function applyTheme(theme: string) {
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
     }
   }
 

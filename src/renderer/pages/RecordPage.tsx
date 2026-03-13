@@ -217,14 +217,14 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
         ctx.fillStyle = grad;
       } else {
         ctx.globalAlpha = 0.25;
-        ctx.fillStyle = '#334155';
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--waveform-idle').trim() || '#334155';
       }
 
       ctx.fillRect(x, centerY - halfBar, barWidth, barH);
     }
 
     ctx.globalAlpha = 1;
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.08)';
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--waveform-center').trim() || 'rgba(148, 163, 184, 0.08)';
     ctx.fillRect(0, centerY, w, 1);
   }
 

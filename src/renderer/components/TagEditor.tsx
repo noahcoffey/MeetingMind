@@ -62,7 +62,7 @@ export default function TagEditor({ tags, allTags, onChange, readOnly }: TagEdit
               alignItems: 'center',
               gap: 4,
               padding: '2px 8px',
-              background: 'rgba(59, 130, 246, 0.15)',
+              background: 'var(--accent-blue-tint)',
               color: 'var(--accent-blue)',
               borderRadius: 10,
               fontSize: 11,

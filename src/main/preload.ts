@@ -40,6 +40,7 @@ const api = {
   // Notes generation
   generateNotes: (recordingId: string) => ipcRenderer.invoke('notes:generate', recordingId),
   getNotes: (recordingId: string) => ipcRenderer.invoke('notes:get', recordingId),
+  updateNotes: (recordingId: string, content: string) => ipcRenderer.invoke('notes:update', recordingId, content),
   saveNotes: (recordingId: string, filename: string) => ipcRenderer.invoke('notes:save', recordingId, filename),
   saveToObsidian: (recordingId: string, filename: string) => ipcRenderer.invoke('notes:saveObsidian', recordingId, filename),
 

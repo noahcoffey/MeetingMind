@@ -1,47 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import GeneralSettings from './settings/GeneralSettings';
+import RecordingSettings from './settings/RecordingSettings';
+import AINotesSettings from './settings/AINotesSettings';
+import VocabularySettings from './settings/VocabularySettings';
+import CalendarSettings from './settings/CalendarSettings';
+import ObsidianSettings from './settings/ObsidianSettings';
 
-const DEFAULT_PROMPT = `You are a professional meeting notes assistant. Based on the transcript and context below, generate structured meeting notes in Markdown format.
+type SettingsSection = 'general' | 'recording' | 'ai-notes' | 'vocabulary' | 'calendar' | 'obsidian';
 
-Context:
-- Meeting: {{event_title}}
-- Date: {{date}}
-- Attendees: {{attendees}}
-- Duration: {{duration}}
-- Additional context from the recorder: {{user_context}}
-- Primary participant (the person who recorded this): {{user_name}}
-
-Transcript:
-{{transcript}}
-
-Generate notes with these exact sections:
-
-# {{suggested_title}}
-
-**Date:** {{date}} | **Attendees:** {{attendees}} | **Duration:** {{duration}}
-
-## Summary
-(3-5 sentence executive summary)
-
-## Key Discussion Points
-(bullet points of main topics)
-
-## Decisions Made
-(explicit decisions reached, or "None recorded" if none)
-
-## Action Items
-(format: - [ ] [Person]: [task] (due: [date if mentioned]))
-
-## Open Questions
-(unresolved items / parking lot)
-
-## Notes
-(any important verbatim quotes or details worth preserving)`;
+const SECTIONS: { key: SettingsSection; label: string; icon: string }[] = [
+  { key: 'general', label: 'General', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z' },
+  { key: 'recording', label: 'Recording & Transcription', icon: 'M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v4 M8 23h8' },
+  { key: 'ai-notes', label: 'AI Notes', icon: 'M12 20h9 M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5Z' },
+  { key: 'vocabulary', label: 'Vocabulary', icon: 'M4 7V4h16v3 M9 20h6 M12 4v16' },
+  { key: 'calendar', label: 'Calendar', icon: 'M16 2v4 M8 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z' },
+  { key: 'obsidian', label: 'Obsidian', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
+];
 
 interface SettingsPageProps {
   onSettingsChange: () => void;
+  initialSection?: SettingsSection;
 }
 
-export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
+export default function SettingsPage({ onSettingsChange, initialSection }: SettingsPageProps) {
+  const [section, setSection] = useState<SettingsSection>(initialSection || 'general');
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [assemblyAiKey, setAssemblyAiKey] = useState('');
   const [anthropicKey, setAnthropicKey] = useState('');
@@ -53,26 +35,16 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
   const [hasDeepgramKey, setHasDeepgramKey] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
+  useEffect(() => { loadSettings(); }, []);
 
   async function loadSettings() {
     try {
       const s = await window.meetingMind.getSettings();
       setSettings(s);
-
-      const aaiKey = await window.meetingMind.getApiKey('assemblyai');
-      setHasAssemblyKey(!!aaiKey);
-
-      const antKey = await window.meetingMind.getApiKey('anthropic');
-      setHasAnthropicKey(!!antKey);
-
-      const oaiKey = await window.meetingMind.getApiKey('openai');
-      setHasOpenaiKey(!!oaiKey);
-
-      const dgKey = await window.meetingMind.getApiKey('deepgram');
-      setHasDeepgramKey(!!dgKey);
+      setHasAssemblyKey(!!(await window.meetingMind.getApiKey('assemblyai')));
+      setHasAnthropicKey(!!(await window.meetingMind.getApiKey('anthropic')));
+      setHasOpenaiKey(!!(await window.meetingMind.getApiKey('openai')));
+      setHasDeepgramKey(!!(await window.meetingMind.getApiKey('deepgram')));
     } catch {
       console.error('Failed to load settings');
     }
@@ -82,28 +54,10 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
     for (const [key, value] of Object.entries(settings)) {
       await window.meetingMind.setSetting(key, value);
     }
-
-    if (assemblyAiKey) {
-      await window.meetingMind.setApiKey('assemblyai', assemblyAiKey);
-      setHasAssemblyKey(true);
-      setAssemblyAiKey('');
-    }
-    if (anthropicKey) {
-      await window.meetingMind.setApiKey('anthropic', anthropicKey);
-      setHasAnthropicKey(true);
-      setAnthropicKey('');
-    }
-    if (openaiKey) {
-      await window.meetingMind.setApiKey('openai', openaiKey);
-      setHasOpenaiKey(true);
-      setOpenaiKey('');
-    }
-    if (deepgramKey) {
-      await window.meetingMind.setApiKey('deepgram', deepgramKey);
-      setHasDeepgramKey(true);
-      setDeepgramKey('');
-    }
-
+    if (assemblyAiKey) { await window.meetingMind.setApiKey('assemblyai', assemblyAiKey); setHasAssemblyKey(true); setAssemblyAiKey(''); }
+    if (anthropicKey) { await window.meetingMind.setApiKey('anthropic', anthropicKey); setHasAnthropicKey(true); setAnthropicKey(''); }
+    if (openaiKey) { await window.meetingMind.setApiKey('openai', openaiKey); setHasOpenaiKey(true); setOpenaiKey(''); }
+    if (deepgramKey) { await window.meetingMind.setApiKey('deepgram', deepgramKey); setHasDeepgramKey(true); setDeepgramKey(''); }
     onSettingsChange();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -118,305 +72,91 @@ export default function SettingsPage({ onSettingsChange }: SettingsPageProps) {
     if (folder) updateSetting(key, folder);
   }
 
-  const provider = settings.transcriptionProvider || 'assemblyai';
-  const notesProvider = settings.notesProvider || 'cli';
+  const currentSection = SECTIONS.find(s => s.key === section)!;
 
   return (
     <>
       <div className="page-header">
         <h1>Settings</h1>
       </div>
-      <div className="page-content" style={{ maxWidth: 820 }}>
-
-        {/* ─── General ─── */}
-        <div className="settings-section">
-          <h2>General</h2>
-          <div className="settings-row">
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Your Name</label>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Used in meeting notes to identify you"
-                value={settings.userName || ''}
-                onChange={e => updateSetting('userName', e.target.value)}
-              />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Recording Output Folder</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={settings.recordingOutputFolder || ''}
-                  readOnly
-                />
-                <button className="btn btn-secondary" onClick={() => handleSelectFolder('recordingOutputFolder')}>
-                  Browse
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ─── Recording & Transcription ─── */}
-        <div className="settings-section">
-          <h2>Recording & Transcription</h2>
-          <div className="settings-row">
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Audio Input Device</label>
-              <select
-                className="form-select"
-                value={settings.defaultInputDevice || 'default'}
-                onChange={e => updateSetting('defaultInputDevice', e.target.value)}
-              >
-                <option value="default">System Default</option>
-              </select>
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Transcription Provider</label>
-              <select
-                className="form-select"
-                value={provider}
-                onChange={e => updateSetting('transcriptionProvider', e.target.value)}
-              >
-                <option value="assemblyai">AssemblyAI — $0.17/hr</option>
-                <option value="openai-whisper">OpenAI Whisper — $0.36/hr</option>
-                <option value="deepgram">Deepgram Nova-2 — $0.26/hr</option>
-              </select>
-              <div className="form-hint">
-                {provider === 'assemblyai' && 'Speaker diarization. Async processing.'}
-                {provider === 'openai-whisper' && 'No speaker ID. 25 MB limit per request.'}
-                {provider === 'deepgram' && 'Speaker diarization. Real-time capable.'}
-              </div>
-            </div>
-          </div>
-
-          {/* API key for selected provider */}
-          {provider === 'assemblyai' && (
-            <div className="form-group">
-              <label className="form-label">
-                AssemblyAI API Key {hasAssemblyKey && <span className="key-saved">(saved)</span>}
-              </label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder={hasAssemblyKey ? '••••••••••••••' : 'Enter your AssemblyAI API key'}
-                value={assemblyAiKey}
-                onChange={e => setAssemblyAiKey(e.target.value)}
-              />
-            </div>
-          )}
-          {provider === 'openai-whisper' && (
-            <div className="form-group">
-              <label className="form-label">
-                OpenAI API Key {hasOpenaiKey && <span className="key-saved">(saved)</span>}
-              </label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder={hasOpenaiKey ? '••••••••••••••' : 'Enter your OpenAI API key'}
-                value={openaiKey}
-                onChange={e => setOpenaiKey(e.target.value)}
-              />
-            </div>
-          )}
-          {provider === 'deepgram' && (
-            <div className="form-group">
-              <label className="form-label">
-                Deepgram API Key {hasDeepgramKey && <span className="key-saved">(saved)</span>}
-              </label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder={hasDeepgramKey ? '••••••••••••••' : 'Enter your Deepgram API key'}
-                value={deepgramKey}
-                onChange={e => setDeepgramKey(e.target.value)}
-              />
-            </div>
-          )}
-
-          <label className="form-label settings-toggle">
-            <input
-              type="checkbox"
-              checked={settings.autoTranscribe || false}
-              onChange={e => updateSetting('autoTranscribe', e.target.checked)}
-            />
-            Auto-transcribe after recording stops
-          </label>
-          <label className="form-label settings-toggle">
-            <input
-              type="checkbox"
-              checked={settings.showCostData || false}
-              onChange={e => updateSetting('showCostData', e.target.checked)}
-            />
-            Show transcription cost in meeting detail
-          </label>
-        </div>
-
-        {/* ─── AI Notes ─── */}
-        <div className="settings-section">
-          <h2>AI Notes</h2>
-          <div className="settings-row">
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Notes Provider</label>
-              <select
-                className="form-select"
-                value={notesProvider}
-                onChange={e => updateSetting('notesProvider', e.target.value)}
-              >
-                <option value="cli">Claude Code CLI (subscription)</option>
-                <option value="api">Anthropic API (credits)</option>
-              </select>
-              <div className="form-hint">
-                {notesProvider === 'cli'
-                  ? 'Runs the "claude" CLI. Requires Claude Code installed and authenticated.'
-                  : 'Uses the Anthropic API directly. Requires an API key.'}
-              </div>
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Model</label>
-              <select
-                className="form-select"
-                value={settings.claudeModel || 'claude-sonnet-4-20250514'}
-                onChange={e => updateSetting('claudeModel', e.target.value)}
-              >
-                <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-                <option value="claude-opus-4-20250514">Claude Opus 4</option>
-                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-              </select>
-            </div>
-          </div>
-
-          {notesProvider === 'api' && (
-            <div className="form-group">
-              <label className="form-label">
-                Anthropic API Key {hasAnthropicKey && <span className="key-saved">(saved)</span>}
-              </label>
-              <input
-                type="password"
-                className="form-input"
-                placeholder={hasAnthropicKey ? '••••••••••••••' : 'Enter your Anthropic API key'}
-                value={anthropicKey}
-                onChange={e => setAnthropicKey(e.target.value)}
-              />
-            </div>
-          )}
-
-          <div className="form-group">
-            <label className="form-label">Prompt Template</label>
-            <textarea
-              className="form-textarea"
-              rows={8}
-              value={settings.notesPromptTemplate || DEFAULT_PROMPT}
-              onChange={e => updateSetting('notesPromptTemplate', e.target.value)}
-            />
+      <div className="page-content" style={{ display: 'flex', gap: 0, height: 'calc(100vh - 112px)' }}>
+        {/* Settings nav */}
+        <div style={{
+          width: 200,
+          flexShrink: 0,
+          borderRight: '1px solid var(--border-color)',
+          paddingRight: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+        }}>
+          {SECTIONS.map(s => (
             <button
-              className="btn btn-ghost"
-              style={{ marginTop: 4, fontSize: 12 }}
-              onClick={() => updateSetting('notesPromptTemplate', DEFAULT_PROMPT)}
+              key={s.key}
+              onClick={() => setSection(s.key)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '8px 10px',
+                background: section === s.key ? 'var(--bg-tertiary)' : 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius)',
+                color: section === s.key ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontSize: 13,
+                fontWeight: section === s.key ? 500 : 400,
+                cursor: 'pointer',
+                textAlign: 'left',
+                width: '100%',
+              }}
             >
-              Reset to Default
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d={s.icon} />
+              </svg>
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Settings content */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', paddingLeft: 24 }}>
+          <div style={{ flex: 1, overflowY: 'auto', maxWidth: 640 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>{currentSection.label}</h2>
+
+            {section === 'general' && (
+              <GeneralSettings settings={settings} updateSetting={updateSetting} onSelectFolder={handleSelectFolder} />
+            )}
+            {section === 'recording' && (
+              <RecordingSettings
+                settings={settings} updateSetting={updateSetting}
+                assemblyAiKey={assemblyAiKey} setAssemblyAiKey={setAssemblyAiKey} hasAssemblyKey={hasAssemblyKey}
+                openaiKey={openaiKey} setOpenaiKey={setOpenaiKey} hasOpenaiKey={hasOpenaiKey}
+                deepgramKey={deepgramKey} setDeepgramKey={setDeepgramKey} hasDeepgramKey={hasDeepgramKey}
+              />
+            )}
+            {section === 'ai-notes' && (
+              <AINotesSettings
+                settings={settings} updateSetting={updateSetting}
+                anthropicKey={anthropicKey} setAnthropicKey={setAnthropicKey} hasAnthropicKey={hasAnthropicKey}
+              />
+            )}
+            {section === 'vocabulary' && (
+              <VocabularySettings settings={settings} updateSetting={updateSetting} />
+            )}
+            {section === 'calendar' && (
+              <CalendarSettings settings={settings} updateSetting={updateSetting} />
+            )}
+            {section === 'obsidian' && (
+              <ObsidianSettings settings={settings} updateSetting={updateSetting} onSelectFolder={handleSelectFolder} />
+            )}
+          </div>
+
+          {/* Save bar */}
+          <div style={{ flexShrink: 0, padding: '12px 0', maxWidth: 640 }}>
+            <button className="btn btn-primary" onClick={handleSave} style={{ width: '100%' }}>
+              {saved ? 'Saved!' : 'Save Settings'}
             </button>
           </div>
-        </div>
-
-        {/* ─── Calendar & Obsidian side-by-side ─── */}
-        <div className="settings-row" style={{ gap: 24, alignItems: 'flex-start' }}>
-          {/* Calendar */}
-          <div className="settings-section" style={{ flex: 1, marginBottom: 0 }}>
-            <h2>Calendar</h2>
-            <label className="form-label settings-toggle">
-              <input
-                type="checkbox"
-                checked={settings.icsCalendarEnabled || false}
-                onChange={e => updateSetting('icsCalendarEnabled', e.target.checked)}
-              />
-              Use ICS Calendar URL
-            </label>
-            {settings.icsCalendarEnabled && (
-              <div className="form-group" style={{ marginTop: 8 }}>
-                <input
-                  type="url"
-                  className="form-input"
-                  placeholder="https://calendar.example.com/feed.ics"
-                  value={settings.icsCalendarUrl || ''}
-                  onChange={e => updateSetting('icsCalendarUrl', e.target.value)}
-                />
-                <div className="form-hint">
-                  Paste a webcal/ICS URL. Events within ±2 hours show on the Record screen.
-                </div>
-              </div>
-            )}
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '12px 0 8px' }}>
-              Or connect via OAuth:
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => window.meetingMind.connectGoogleCalendar()}>
-                Google
-              </button>
-              <button className="btn btn-secondary" style={{ fontSize: 12 }} onClick={() => window.meetingMind.connectMicrosoftCalendar()}>
-                Microsoft 365
-              </button>
-            </div>
-          </div>
-
-          {/* Obsidian */}
-          <div className="settings-section" style={{ flex: 1, marginBottom: 0 }}>
-            <h2>Obsidian</h2>
-            <div className="form-group">
-              <label className="form-label">Vault Path</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={settings.obsidianVaultPath || ''}
-                  readOnly
-                  placeholder="Select your Obsidian vault folder"
-                />
-                <button className="btn btn-secondary" onClick={() => handleSelectFolder('obsidianVaultPath')}>
-                  Browse
-                </button>
-              </div>
-            </div>
-            <div className="settings-row">
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">Subfolder</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="Meeting Notes"
-                  value={settings.obsidianSubfolder || ''}
-                  onChange={e => updateSetting('obsidianSubfolder', e.target.value)}
-                />
-              </div>
-              <div className="form-group" style={{ flex: 1 }}>
-                <label className="form-label">Daily Notes Folder</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="(root of vault)"
-                  value={settings.obsidianDailyNotesFolder || ''}
-                  onChange={e => updateSetting('obsidianDailyNotesFolder', e.target.value)}
-                />
-              </div>
-            </div>
-            <label className="form-label settings-toggle">
-              <input
-                type="checkbox"
-                checked={settings.autoSaveToObsidian || false}
-                onChange={e => updateSetting('autoSaveToObsidian', e.target.checked)}
-              />
-              Auto-save notes to Obsidian
-            </label>
-          </div>
-        </div>
-
-        {/* Save */}
-        <div style={{ position: 'sticky', bottom: 0, padding: '16px 0', background: 'var(--bg-primary)', marginTop: 32 }}>
-          <button className="btn btn-primary" onClick={handleSave} style={{ width: '100%' }}>
-            {saved ? 'Saved!' : 'Save Settings'}
-          </button>
         </div>
       </div>
     </>
