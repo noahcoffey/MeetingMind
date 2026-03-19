@@ -30,6 +30,8 @@ export interface AppSettings {
   speakerDirectory: string[];
   customVocabulary: VocabularyEntry[];
   theme: 'dark' | 'light' | 'system' | 'ember' | 'forest' | 'nord' | 'violet' | 'ocean' | 'slate';
+  notebooks: string[];
+  activeNotebook: string;
 }
 
 const defaults: AppSettings = {
@@ -57,6 +59,8 @@ const defaults: AppSettings = {
   speakerDirectory: [],
   customVocabulary: [],
   theme: 'dark' as const,
+  notebooks: ['Personal'],
+  activeNotebook: 'Personal',
 };
 
 let store: Store<AppSettings>;

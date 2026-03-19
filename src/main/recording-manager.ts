@@ -30,6 +30,7 @@ interface ActiveRecording {
   calendarEventId?: string;
   userContext?: string;
   title?: string;
+  notebook?: string;
 }
 
 let activeRecording: ActiveRecording | null = null;
@@ -55,7 +56,7 @@ function getOutputDir(): string {
   return customDir || path.join(os.homedir(), 'Documents', 'MeetingMind', 'recordings');
 }
 
-export function startRecording(deviceId: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string): { success: boolean; sessionId?: string; error?: string } {
+export function startRecording(deviceId: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string): { success: boolean; sessionId?: string; error?: string } {
   if (activeRecording) {
     return { success: false, error: 'Recording already in progress' };
   }
@@ -81,6 +82,7 @@ export function startRecording(deviceId: string, systemAudioDeviceId?: string, c
     calendarEventId,
     userContext,
     title,
+    notebook,
   };
 
   log('info', `Starting recording session ${sessionId}`, { deviceId });
@@ -199,6 +201,7 @@ function writeManifest(): void {
     title: activeRecording.title,
     calendarEventId: activeRecording.calendarEventId,
     userContext: activeRecording.userContext,
+    notebook: activeRecording.notebook,
   };
 
   const manifestPath = path.join(activeRecording.tempDir, 'recording-manifest.json');
@@ -364,6 +367,7 @@ export async function stopRecording(): Promise<{ success: boolean; recordingId?:
       status: 'recorded' as const,
       calendarEventId: recording.calendarEventId,
       userContext: recording.userContext,
+      notebook: recording.notebook || getSetting('activeNotebook') || 'Personal',
       speakerNames: {},
     };
 

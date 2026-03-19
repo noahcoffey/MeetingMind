@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import PipelineWidget, { BackgroundJob } from './PipelineWidget';
 
 type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
@@ -9,11 +9,273 @@ interface SidebarProps {
   backgroundJobs: BackgroundJob[];
   onViewJobRecording: (recordingId: string) => void;
   onDismissJob: (recordingId: string) => void;
+  notebooks: string[];
+  activeNotebook: string;
+  onNotebookChange: (notebook: string) => void;
+  onNotebooksUpdate: (notebooks: string[]) => void;
 }
 
-export default function Sidebar({ currentPage, onNavigate, backgroundJobs, onViewJobRecording, onDismissJob }: SidebarProps) {
+export default function Sidebar({
+  currentPage, onNavigate, backgroundJobs, onViewJobRecording, onDismissJob,
+  notebooks, activeNotebook, onNotebookChange, onNotebooksUpdate,
+}: SidebarProps) {
+  const [showNotebookMenu, setShowNotebookMenu] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editName, setEditName] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const createInputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowNotebookMenu(false);
+        setIsCreating(false);
+        setEditingIndex(null);
+      }
+    }
+    if (showNotebookMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showNotebookMenu]);
+
+  useEffect(() => {
+    if (isCreating && createInputRef.current) createInputRef.current.focus();
+  }, [isCreating]);
+
+  useEffect(() => {
+    if (editingIndex !== null && editInputRef.current) editInputRef.current.focus();
+  }, [editingIndex]);
+
+  function handleCreate() {
+    const trimmed = newName.trim();
+    if (trimmed && !notebooks.includes(trimmed)) {
+      const updated = [...notebooks, trimmed];
+      onNotebooksUpdate(updated);
+      onNotebookChange(trimmed);
+    }
+    setNewName('');
+    setIsCreating(false);
+  }
+
+  function handleRename(index: number) {
+    const trimmed = editName.trim();
+    const oldName = notebooks[index];
+    if (trimmed && trimmed !== oldName && !notebooks.includes(trimmed)) {
+      const updated = notebooks.map((n, i) => i === index ? trimmed : n);
+      onNotebooksUpdate(updated);
+      if (activeNotebook === oldName) onNotebookChange(trimmed);
+      // Update manifests with old notebook name — fire and forget
+      (async () => {
+        const recordings = await window.meetingMind.getRecordings();
+        for (const rec of recordings) {
+          if (rec.notebook === oldName || (!rec.notebook && oldName === notebooks[0])) {
+            await (window.meetingMind as any).moveToNotebook(rec.id, trimmed);
+          }
+        }
+      })();
+    }
+    setEditingIndex(null);
+    setEditName('');
+  }
+
+  function handleDelete(index: number) {
+    if (notebooks.length <= 1) return; // Keep at least one
+    const name = notebooks[index];
+    const updated = notebooks.filter((_, i) => i !== index);
+    // Move recordings from deleted notebook to first remaining
+    const fallback = updated[0];
+    (async () => {
+      const recordings = await window.meetingMind.getRecordings();
+      for (const rec of recordings) {
+        if (rec.notebook === name) {
+          await (window.meetingMind as any).moveToNotebook(rec.id, fallback);
+        }
+      }
+    })();
+    onNotebooksUpdate(updated);
+  }
+
   return (
     <div className="sidebar">
+      {/* Notebook selector */}
+      <div ref={menuRef} style={{ padding: '12px 12px 4px', position: 'relative', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <button
+          onClick={() => setShowNotebookMenu(prev => !prev)}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '7px 10px',
+            background: 'var(--bg-input)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius)',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 500,
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+          </svg>
+          <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeNotebook}
+          </span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+
+        {showNotebookMenu && (
+          <div style={{
+            position: 'absolute',
+            top: '100%',
+            left: 12,
+            right: 12,
+            marginTop: 4,
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--radius)',
+            boxShadow: 'var(--shadow-dropdown)',
+            zIndex: 100,
+            overflow: 'hidden',
+          }}>
+            {notebooks.map((nb, i) => (
+              <div key={nb} style={{ display: 'flex', alignItems: 'center' }}>
+                {editingIndex === i ? (
+                  <input
+                    ref={editInputRef}
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleRename(i);
+                      if (e.key === 'Escape') { setEditingIndex(null); setEditName(''); }
+                    }}
+                    onBlur={() => handleRename(i)}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      background: 'var(--bg-input)',
+                      border: 'none',
+                      color: 'var(--text-primary)',
+                      fontSize: 13,
+                      outline: 'none',
+                    }}
+                  />
+                ) : (
+                  <button
+                    onClick={() => {
+                      onNotebookChange(nb);
+                      setShowNotebookMenu(false);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      background: nb === activeNotebook ? 'var(--accent-blue-tint)' : 'none',
+                      border: 'none',
+                      color: nb === activeNotebook ? 'var(--accent-blue)' : 'var(--text-primary)',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      fontWeight: nb === activeNotebook ? 500 : 400,
+                    }}
+                  >
+                    {nb}
+                  </button>
+                )}
+                {editingIndex !== i && (
+                  <div style={{ display: 'flex', gap: 2, paddingRight: 6 }}>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingIndex(i);
+                        setEditName(nb);
+                      }}
+                      style={{
+                        background: 'none', border: 'none', color: 'var(--text-muted)',
+                        cursor: 'pointer', padding: '4px', fontSize: 11, lineHeight: 1,
+                      }}
+                      title="Rename"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                      </svg>
+                    </button>
+                    {notebooks.length > 1 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(i);
+                        }}
+                        style={{
+                          background: 'none', border: 'none', color: 'var(--text-muted)',
+                          cursor: 'pointer', padding: '4px', fontSize: 11, lineHeight: 1,
+                        }}
+                        title="Delete notebook"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div style={{ borderTop: '1px solid var(--border-color)' }}>
+              {isCreating ? (
+                <div style={{ display: 'flex' }}>
+                  <input
+                    ref={createInputRef}
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleCreate();
+                      if (e.key === 'Escape') { setIsCreating(false); setNewName(''); }
+                    }}
+                    onBlur={handleCreate}
+                    placeholder="Notebook name..."
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      background: 'var(--bg-input)',
+                      border: 'none',
+                      color: 'var(--text-primary)',
+                      fontSize: 13,
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsCreating(true)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span style={{ fontSize: 15, lineHeight: 1 }}>+</span> New Notebook
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       <nav className="sidebar-nav">
 
         <button

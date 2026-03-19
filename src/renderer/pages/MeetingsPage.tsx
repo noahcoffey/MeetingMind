@@ -10,6 +10,8 @@ import MarkdownRenderer from '../components/MarkdownRenderer';
 
 interface MeetingsPageProps {
   initialMeetingId?: string | null;
+  activeNotebook?: string;
+  notebooks?: string[];
 }
 
 type DetailTab = 'notes' | 'transcript' | 'speakers' | 'ask';
@@ -21,7 +23,7 @@ interface QAEntry {
   timestamp: string;
 }
 
-export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
+export default function MeetingsPage({ initialMeetingId, activeNotebook, notebooks }: MeetingsPageProps) {
   const [meetings, setMeetings] = useState<Recording[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Recording | null>(null);
   const [notesContent, setNotesContent] = useState('');
@@ -416,10 +418,15 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
     }
   }
 
-  // Filter meetings by tag
-  const filteredMeetings = filterTag
-    ? meetings.filter(r => r.tags?.includes(filterTag))
+  // Filter meetings by notebook, then by tag
+  // Recordings without a notebook field belong to the first (default) notebook
+  const defaultNotebook = notebooks?.[0] || 'Personal';
+  const notebookMeetings = activeNotebook
+    ? meetings.filter(r => (r.notebook || defaultNotebook) === activeNotebook)
     : meetings;
+  const filteredMeetings = filterTag
+    ? notebookMeetings.filter(r => r.tags?.includes(filterTag))
+    : notebookMeetings;
 
   // Group meetings by day
   function getDayLabel(dateStr: string): string {
@@ -687,6 +694,29 @@ export default function MeetingsPage({ initialMeetingId }: MeetingsPageProps) {
                         <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); window.meetingMind.openInFinder(selectedMeeting.audioPath); }}>
                           Open in Finder
                         </button>
+                        {notebooks && notebooks.length > 1 && (
+                          <>
+                            <div className="actions-dropdown-sep" />
+                            <div style={{ padding: '4px 12px 2px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              Move to Notebook
+                            </div>
+                            {notebooks.filter(nb => nb !== (selectedMeeting.notebook || defaultNotebook)).map(nb => (
+                              <button
+                                key={nb}
+                                className="actions-dropdown-item"
+                                onClick={async () => {
+                                  setShowActionsMenu(false);
+                                  await (window.meetingMind as any).moveToNotebook(selectedMeeting.id, nb);
+                                  setSelectedMeeting({ ...selectedMeeting, notebook: nb });
+                                  loadMeetings();
+                                  showToast(`Moved to ${nb}`);
+                                }}
+                              >
+                                {nb}
+                              </button>
+                            ))}
+                          </>
+                        )}
                         <div className="actions-dropdown-sep" />
                         <button className="actions-dropdown-item actions-dropdown-danger" onClick={() => { setShowActionsMenu(false); setShowDeleteConfirm(true); }}>
                           Delete Meeting

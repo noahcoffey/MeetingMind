@@ -15,7 +15,7 @@ const api = {
   getSystemAudioDevices: () => ipcRenderer.invoke('audio:getSystemDevices'),
 
   // Recording
-  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId, calendarEventId, userContext, title),
+  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId, calendarEventId, userContext, title, notebook),
   stopRecording: () => ipcRenderer.invoke('recording:stop'),
   cancelRecording: () => ipcRenderer.invoke('recording:cancel'),
   pauseRecording: () => ipcRenderer.invoke('recording:pause'),
@@ -36,6 +36,7 @@ const api = {
 
   // Rename recording title
   renameRecording: (recordingId: string, newTitle: string) => ipcRenderer.invoke('recordings:renameTitle', recordingId, newTitle),
+  moveToNotebook: (recordingId: string, notebook: string) => ipcRenderer.invoke('recordings:moveToNotebook', recordingId, notebook),
 
   // Notes generation
   generateNotes: (recordingId: string) => ipcRenderer.invoke('notes:generate', recordingId),

@@ -16,6 +16,8 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [viewRecordingId, setViewRecordingId] = useState<string | null>(null);
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
+  const [notebooks, setNotebooks] = useState<string[]>(['Personal']);
+  const [activeNotebook, setActiveNotebook] = useState<string>('Personal');
   const jobCleanupRef = useRef<Map<string, () => void>>(new Map());
 
   useEffect(() => {
@@ -32,6 +34,8 @@ export default function App() {
       const s = await window.meetingMind.getSettings();
       setSettings(s);
       applyTheme(s.theme as string || 'dark');
+      setNotebooks((s.notebooks as string[]) || ['Personal']);
+      setActiveNotebook((s.activeNotebook as string) || (s.notebooks as string[])?.[0] || 'Personal');
       if (!s.onboardingComplete) {
         setShowOnboarding(true);
       }
@@ -163,6 +167,22 @@ export default function App() {
     handleDismissJob(recordingId);
   }
 
+  function handleNotebookChange(notebook: string) {
+    setActiveNotebook(notebook);
+    window.meetingMind.setSetting('activeNotebook', notebook);
+  }
+
+  async function handleNotebooksUpdate(updated: string[]) {
+    setNotebooks(updated);
+    await window.meetingMind.setSetting('notebooks', updated);
+    // If active notebook was deleted, switch to first
+    if (!updated.includes(activeNotebook)) {
+      const fallback = updated[0] || 'Personal';
+      setActiveNotebook(fallback);
+      await window.meetingMind.setSetting('activeNotebook', fallback);
+    }
+  }
+
   function handleNavigate(page: Page) {
     if (page !== 'meetings') {
       setViewRecordingId(null);
@@ -187,15 +207,20 @@ export default function App() {
         backgroundJobs={backgroundJobs}
         onViewJobRecording={handleViewJobRecording}
         onDismissJob={handleDismissJob}
+        notebooks={notebooks}
+        activeNotebook={activeNotebook}
+        onNotebookChange={handleNotebookChange}
+        onNotebooksUpdate={handleNotebooksUpdate}
       />
       <div className="main-content">
         {currentPage === 'record' && (
           <RecordPage
             onRecordingComplete={handleRecordingComplete}
             onRecordingSaved={handleRecordingSaved}
+            activeNotebook={activeNotebook}
           />
         )}
-        {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} />}
+        {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} activeNotebook={activeNotebook} notebooks={notebooks} />}
         {currentPage === 'settings' && <SettingsPage onSettingsChange={loadSettings} />}
         {currentPage === 'highlights' && <HighlightsPage />}
         {currentPage === 'analytics' && <AnalyticsPage />}

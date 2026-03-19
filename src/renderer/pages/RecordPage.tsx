@@ -3,11 +3,12 @@ import React, { useState, useEffect, useRef } from 'react';
 interface RecordPageProps {
   onRecordingComplete?: (recordingId: string) => void;
   onRecordingSaved?: (recordingId: string) => void;
+  activeNotebook?: string;
 }
 
 type PipelineStage = 'idle' | 'recording' | 'stopping' | 'merging' | 'complete';
 
-export default function RecordPage({ onRecordingComplete, onRecordingSaved }: RecordPageProps) {
+export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook }: RecordPageProps) {
   const [stage, setStage] = useState<PipelineStage>('idle');
   const [duration, setDuration] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -316,6 +317,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved }: Re
         selectedEvent?.id,
         userContext || undefined,
         meetingTitle || undefined,
+        activeNotebook || undefined,
       );
       if (result.success) {
         startTimeRef.current = Date.now();
