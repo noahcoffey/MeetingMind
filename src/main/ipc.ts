@@ -21,6 +21,7 @@ import { searchRecordings } from './search';
 import { setTags, getAllTags } from './tagger';
 import { getAnalyticsStats, generateTrendInsights } from './analytics';
 import { generateWeeklyHighlights, getHighlightsPreview, listSavedHighlights, getSavedHighlight, deleteSavedHighlight } from './weekly-highlights';
+import { askQuestion, getQuestions, deleteQuestion, appendQAToObsidian } from './meeting-qa';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -309,6 +310,23 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('highlights:delete', async (_event, id: string) => {
     return deleteSavedHighlight(id);
+  });
+
+  // Meeting Q&A
+  ipcMain.handle('qa:ask', async (_event, recordingId: string, question: string) => {
+    return askQuestion(recordingId, question);
+  });
+
+  ipcMain.handle('qa:list', async (_event, recordingId: string) => {
+    return getQuestions(recordingId);
+  });
+
+  ipcMain.handle('qa:delete', async (_event, recordingId: string, qaId: string) => {
+    return deleteQuestion(recordingId, qaId);
+  });
+
+  ipcMain.handle('qa:saveToObsidian', async (_event, recordingId: string, qaId: string) => {
+    return appendQAToObsidian(recordingId, qaId);
   });
 
   log('info', 'IPC handlers registered');

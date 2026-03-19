@@ -77,6 +77,12 @@ const api = {
     ipcRenderer.invoke('file:openInObsidian', vaultName, filePath),
   selectFolder: () => ipcRenderer.invoke('file:selectFolder'),
 
+  // Meeting Q&A
+  askQuestion: (recordingId: string, question: string) => ipcRenderer.invoke('qa:ask', recordingId, question),
+  getQuestions: (recordingId: string) => ipcRenderer.invoke('qa:list', recordingId),
+  deleteQuestion: (recordingId: string, qaId: string) => ipcRenderer.invoke('qa:delete', recordingId, qaId),
+  saveQAToObsidian: (recordingId: string, qaId: string) => ipcRenderer.invoke('qa:saveToObsidian', recordingId, qaId),
+
   // Weekly Highlights
   getHighlightsPreview: (startDate: string, endDate: string) =>
     ipcRenderer.invoke('highlights:preview', startDate, endDate),
@@ -100,6 +106,9 @@ const api = {
       'crash-recovery',
       'highlights:stream',
       'highlights:complete',
+      'qa:stream',
+      'qa:complete',
+      'qa:error',
     ];
     if (validChannels.includes(channel)) {
       const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args);
