@@ -380,6 +380,74 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  async function handleTestAudio() {
+    if (audioTestRunning) return;
+    setAudioTestRunning(true);
+    setMicTestLevel(null);
+    setSysTestLevel(null);
+    setMicTestResult(null);
+    setSysTestResult(null);
+    micTestPeakRef.current = 0;
+
+    // Test mic via Web Audio API
+    try {
+      const constraints: MediaStreamConstraints = {
+        audio: selectedDevice !== 'default'
+          ? { deviceId: { exact: selectedDevice } }
+          : true,
+      };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      micTestStreamRef.current = stream;
+      const audioCtx = new AudioContext();
+      const source = audioCtx.createMediaStreamSource(stream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      micTestIntervalRef.current = setInterval(() => {
+        const data = new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length / 255;
+        setMicTestLevel(avg);
+        if (avg > micTestPeakRef.current) micTestPeakRef.current = avg;
+      }, 100);
+
+      // Run for 4 seconds
+      setTimeout(() => {
+        if (micTestIntervalRef.current) clearInterval(micTestIntervalRef.current);
+        stream.getTracks().forEach(t => t.stop());
+        audioCtx.close();
+        micTestStreamRef.current = null;
+        setMicTestResult(micTestPeakRef.current > 0.02 ? 'pass' : 'fail');
+        setMicTestLevel(null);
+      }, 4000);
+    } catch {
+      setMicTestResult('fail');
+    }
+
+    // Test system audio via ffmpeg (if selected)
+    if (selectedSystemDevice) {
+      try {
+        const result = await (window.meetingMind as any).testSystemAudio(selectedSystemDevice);
+        if (result.success) {
+          setSysTestLevel(result.peakLevel);
+          setSysTestResult(result.peakLevel > 0.02 ? 'pass' : 'fail');
+        } else {
+          setSysTestResult('fail');
+        }
+      } catch {
+        setSysTestResult('fail');
+      }
+    } else {
+      setSysTestResult('skip');
+    }
+
+    // Wait for mic test to finish before clearing running state
+    setTimeout(() => {
+      setAudioTestRunning(false);
+    }, 4200);
+  }
+
   const now = Date.now();
   const nextEventIndex = calendarEvents.findIndex(e => new Date(e.startTime).getTime() > now);
 
@@ -419,6 +487,17 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
   }
 
   const hasSystemDevices = systemAudioDevices.length > 0;
+  const hasVirtualDevice = systemAudioDevices.some((d: any) => d.isVirtual);
+  const [showAudioSetup, setShowAudioSetup] = useState(false);
+  const [dismissedAudioSetup, setDismissedAudioSetup] = useState(false);
+  const [audioTestRunning, setAudioTestRunning] = useState(false);
+  const [micTestLevel, setMicTestLevel] = useState<number | null>(null);
+  const [sysTestLevel, setSysTestLevel] = useState<number | null>(null);
+  const [micTestResult, setMicTestResult] = useState<'pass' | 'fail' | null>(null);
+  const [sysTestResult, setSysTestResult] = useState<'pass' | 'fail' | 'skip' | null>(null);
+  const micTestIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const micTestStreamRef = useRef<MediaStream | null>(null);
+  const micTestPeakRef = useRef<number>(0);
 
   return (
     <div className="rp-root">
@@ -576,12 +655,192 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                         </option>
                       ))}
                     </select>
-                    <div className="rp-device-hint">
-                      Virtual audio device (BlackHole) to capture Zoom/Teams/Meet
+                    {!selectedSystemDevice && (
+                      <div style={{
+                        fontSize: 12,
+                        color: 'var(--accent-yellow)',
+                        marginTop: 4,
+                        lineHeight: 1.4,
+                      }}>
+                        System audio not selected — only your microphone will be recorded.
+                        Zoom/Teams/Meet participants won't be captured.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Audio test button + results */}
+              <div style={{ width: '100%', maxWidth: 440 }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleTestAudio}
+                  disabled={audioTestRunning || isRecording}
+                  style={{ fontSize: 12, padding: '5px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  {audioTestRunning ? (
+                    <>
+                      <span className="rp-spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                      </svg>
+                      Test Audio
+                    </>
+                  )}
+                </button>
+
+                {/* Test results */}
+                {(micTestResult || sysTestResult) && !audioTestRunning && (
+                  <div style={{
+                    marginTop: 8,
+                    padding: '8px 12px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 'var(--radius)',
+                    fontSize: 12,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: micTestResult === 'pass' ? 'var(--accent-green)' : 'var(--accent-red)', fontSize: 14 }}>
+                        {micTestResult === 'pass' ? '\u2713' : '\u2717'}
+                      </span>
+                      <span style={{ color: 'var(--text-primary)' }}>Microphone</span>
+                      <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                        {micTestResult === 'pass' ? 'Audio detected' : 'No audio detected'}
+                      </span>
+                    </div>
+                    {sysTestResult && sysTestResult !== 'skip' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: sysTestResult === 'pass' ? 'var(--accent-green)' : 'var(--accent-red)', fontSize: 14 }}>
+                          {sysTestResult === 'pass' ? '\u2713' : '\u2717'}
+                        </span>
+                        <span style={{ color: 'var(--text-primary)' }}>System Audio</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                          {sysTestResult === 'pass' ? 'Audio detected' : 'No audio detected — check setup guide below'}
+                        </span>
+                      </div>
+                    )}
+                    {sysTestResult === 'skip' && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>—</span>
+                        <span style={{ color: 'var(--text-muted)' }}>System Audio</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>Not selected</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Live level during test */}
+                {audioTestRunning && micTestLevel !== null && (
+                  <div style={{
+                    marginTop: 8,
+                    padding: '8px 12px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 'var(--radius)',
+                    fontSize: 12,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ color: 'var(--text-secondary)', minWidth: 80 }}>Microphone</span>
+                      <div style={{
+                        flex: 1,
+                        height: 6,
+                        background: 'var(--bg-input)',
+                        borderRadius: 3,
+                        overflow: 'hidden',
+                      }}>
+                        <div style={{
+                          width: `${Math.min(100, micTestLevel * 500)}%`,
+                          height: '100%',
+                          background: micTestLevel > 0.02 ? 'var(--accent-green)' : 'var(--text-muted)',
+                          borderRadius: 3,
+                          transition: 'width 0.1s',
+                        }} />
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      Listening... speak or play audio to test
                     </div>
                   </div>
                 )}
               </div>
+
+              {/* System audio setup guide */}
+              {!hasVirtualDevice && !dismissedAudioSetup && (
+                <div style={{
+                  background: 'var(--accent-yellow-tint)',
+                  border: '1px solid var(--accent-yellow)',
+                  borderRadius: 'var(--radius)',
+                  padding: '12px 14px',
+                  width: '100%',
+                  maxWidth: 440,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <line x1="12" y1="8" x2="12" y2="12" />
+                        <line x1="12" y1="16" x2="12.01" y2="16" />
+                      </svg>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                        System Audio Not Available
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setDismissedAudioSetup(true)}
+                      style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0 2px', fontSize: 16, lineHeight: 1 }}
+                    >&times;</button>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
+                    Without a virtual audio device, MeetingMind can only record your microphone.
+                    Audio from Zoom, Teams, or Meet participants won't be captured.
+                  </div>
+                  {!showAudioSetup ? (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => setShowAudioSetup(true)}
+                      style={{ fontSize: 12, padding: '4px 12px' }}
+                    >
+                      Show Setup Guide
+                    </button>
+                  ) : (
+                    <div style={{ fontSize: 12, color: 'var(--text-primary)', lineHeight: 1.7 }}>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>Install BlackHole (free virtual audio driver):</div>
+                      <div style={{ fontFamily: 'monospace', background: 'var(--bg-input)', padding: '6px 10px', borderRadius: 4, marginBottom: 10, fontSize: 11 }}>
+                        brew install blackhole-2ch
+                      </div>
+                      <div style={{ fontWeight: 600, marginBottom: 4 }}>Then set up a Multi-Output Device:</div>
+                      <ol style={{ margin: '0 0 0 16px', padding: 0 }}>
+                        <li style={{ marginBottom: 4 }}>Open <strong>Audio MIDI Setup</strong> (search in Spotlight)</li>
+                        <li style={{ marginBottom: 4 }}>Click <strong>+</strong> at bottom-left, select <strong>Create Multi-Output Device</strong></li>
+                        <li style={{ marginBottom: 4 }}>Check both your speakers/headphones <strong>and</strong> BlackHole 2ch</li>
+                        <li style={{ marginBottom: 4 }}>Go to <strong>System Settings &gt; Sound &gt; Output</strong>, select the Multi-Output Device</li>
+                        <li>Restart MeetingMind — BlackHole will appear in the System Audio dropdown above</li>
+                      </ol>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={async () => {
+                          await loadSystemAudioDevices();
+                          if (systemAudioDevices.some((d: any) => d.isVirtual)) {
+                            setShowAudioSetup(false);
+                          }
+                        }}
+                        style={{ fontSize: 12, padding: '4px 12px', marginTop: 10 }}
+                      >
+                        Refresh Devices
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Error */}
               {pipelineMessage && (

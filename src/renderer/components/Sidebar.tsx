@@ -111,10 +111,10 @@ export default function Sidebar({
             alignItems: 'center',
             gap: 8,
             padding: '7px 10px',
-            background: 'var(--bg-input)',
-            border: '1px solid var(--border-color)',
+            background: 'var(--sidebar-hover-bg, var(--bg-input))',
+            border: '1px solid var(--sidebar-border, var(--border-color))',
             borderRadius: 'var(--radius)',
-            color: 'var(--text-primary)',
+            color: 'var(--sidebar-text, var(--text-primary))',
             cursor: 'pointer',
             fontSize: 13,
             fontWeight: 500,
@@ -139,8 +139,8 @@ export default function Sidebar({
             left: 12,
             right: 12,
             marginTop: 4,
-            background: 'var(--bg-secondary)',
-            border: '1px solid var(--border-color)',
+            background: 'var(--sidebar-hover-bg, var(--bg-secondary))',
+            border: '1px solid var(--sidebar-border, var(--border-color))',
             borderRadius: 'var(--radius)',
             boxShadow: 'var(--shadow-dropdown)',
             zIndex: 100,
@@ -161,9 +161,9 @@ export default function Sidebar({
                     style={{
                       flex: 1,
                       padding: '8px 12px',
-                      background: 'var(--bg-input)',
+                      background: 'var(--sidebar-active-bg, var(--bg-input))',
                       border: 'none',
-                      color: 'var(--text-primary)',
+                      color: 'var(--sidebar-text, var(--text-primary))',
                       fontSize: 13,
                       outline: 'none',
                     }}
@@ -179,7 +179,7 @@ export default function Sidebar({
                       padding: '8px 12px',
                       background: nb === activeNotebook ? 'var(--accent-blue-tint)' : 'none',
                       border: 'none',
-                      color: nb === activeNotebook ? 'var(--accent-blue)' : 'var(--text-primary)',
+                      color: nb === activeNotebook ? 'var(--accent-blue)' : 'var(--sidebar-text, var(--text-primary))',
                       fontSize: 13,
                       cursor: 'pointer',
                       textAlign: 'left',
@@ -198,7 +198,7 @@ export default function Sidebar({
                         setEditName(nb);
                       }}
                       style={{
-                        background: 'none', border: 'none', color: 'var(--text-muted)',
+                        background: 'none', border: 'none', color: 'var(--sidebar-text-muted, var(--text-muted))',
                         cursor: 'pointer', padding: '4px', fontSize: 11, lineHeight: 1,
                       }}
                       title="Rename"
@@ -214,7 +214,7 @@ export default function Sidebar({
                           handleDelete(i);
                         }}
                         style={{
-                          background: 'none', border: 'none', color: 'var(--text-muted)',
+                          background: 'none', border: 'none', color: 'var(--sidebar-text-muted, var(--text-muted))',
                           cursor: 'pointer', padding: '4px', fontSize: 11, lineHeight: 1,
                         }}
                         title="Delete notebook"
@@ -227,7 +227,7 @@ export default function Sidebar({
               </div>
             ))}
 
-            <div style={{ borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ borderTop: '1px solid var(--sidebar-border, var(--border-color))' }}>
               {isCreating ? (
                 <div style={{ display: 'flex' }}>
                   <input
@@ -243,9 +243,9 @@ export default function Sidebar({
                     style={{
                       flex: 1,
                       padding: '8px 12px',
-                      background: 'var(--bg-input)',
+                      background: 'var(--sidebar-active-bg, var(--bg-input))',
                       border: 'none',
-                      color: 'var(--text-primary)',
+                      color: 'var(--sidebar-text, var(--text-primary))',
                       fontSize: 13,
                       outline: 'none',
                     }}
@@ -259,7 +259,7 @@ export default function Sidebar({
                     padding: '8px 12px',
                     background: 'none',
                     border: 'none',
-                    color: 'var(--text-muted)',
+                    color: 'var(--sidebar-text-muted, var(--text-muted))',
                     fontSize: 13,
                     cursor: 'pointer',
                     textAlign: 'left',

@@ -11,6 +11,7 @@ import {
   listRecordings,
   getRecording,
   deleteRecording,
+  testSystemAudio,
 } from './recording-manager';
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian } from './notes-generator';
@@ -100,6 +101,11 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('audio:getSystemDevices', async () => {
     return listSystemAudioDevices();
+  });
+
+  // Audio test
+  ipcMain.handle('audio:testSystem', async (_event, deviceId: string) => {
+    return testSystemAudio(deviceId);
   });
 
   // Recording handlers

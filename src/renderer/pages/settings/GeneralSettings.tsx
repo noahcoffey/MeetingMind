@@ -31,6 +31,10 @@ export default function GeneralSettings({ settings, updateSetting, onSelectFolde
             { id: 'slate', label: 'Slate', colors: ['#2a2d30', '#333739', '#8fbcbb'] },
             { id: 'violet', label: 'Violet', colors: ['#18141e', '#241e32', '#e74c3c'] },
             { id: 'light', label: 'Light', colors: ['#ffffff', '#f3f4f6', '#dc2626'] },
+            { id: 'paper', label: 'Paper', colors: ['#1f2937', '#f9fafb', '#2563eb'], split: true },
+            { id: 'linen', label: 'Linen', colors: ['#2c2520', '#f8f4ef', '#c05746'], split: true },
+            { id: 'sandstone', label: 'Sandstone', colors: ['#2a2622', '#f5f0e8', '#b85c38'], split: true },
+            { id: 'dawn', label: 'Dawn', colors: ['#28222e', '#f8f4f8', '#c4527a'], split: true },
             { id: 'system', label: 'System', colors: [] },
           ] as const).map(t => {
             const isActive = (settings.theme || 'dark') === t.id;
@@ -63,15 +67,24 @@ export default function GeneralSettings({ settings, updateSetting, onSelectFolde
                 {t.colors.length > 0 ? (
                   <div style={{
                     display: 'flex',
-                    gap: 3,
+                    gap: 0,
                     height: 20,
                     width: '100%',
                     borderRadius: 4,
                     overflow: 'hidden',
                   }}>
-                    {t.colors.map((c, i) => (
-                      <div key={i} style={{ flex: 1, backgroundColor: c }} />
-                    ))}
+                    {'split' in t && t.split ? (
+                      <>
+                        <div style={{ flex: '0 0 30%', backgroundColor: t.colors[0] }} />
+                        <div style={{ flex: 1, backgroundColor: t.colors[1], display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: t.colors[2] }} />
+                        </div>
+                      </>
+                    ) : (
+                      t.colors.map((c, i) => (
+                        <div key={i} style={{ flex: 1, backgroundColor: c, marginLeft: i > 0 ? 3 : 0 }} />
+                      ))
+                    )}
                   </div>
                 ) : (
                   <div style={{

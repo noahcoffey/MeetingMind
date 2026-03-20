@@ -504,6 +504,63 @@ export function startLevelMonitor(deviceId: string): void {
   // using Web Audio API analyser, since the renderer has access to getUserMedia
 }
 
+// Test system audio device — captures a few seconds via ffmpeg and returns peak level
+export function testSystemAudio(deviceId: string, durationSec: number = 4): Promise<{ success: boolean; peakLevel?: number; error?: string }> {
+  const ffmpegPath = getFFmpegPath();
+  const devId = deviceId === 'default' ? '0' : deviceId;
+
+  return new Promise((resolve) => {
+    // Use volumedetect filter to measure audio levels
+    const args = [
+      '-f', 'avfoundation',
+      '-i', `:${devId}`,
+      '-t', String(durationSec),
+      '-af', 'volumedetect',
+      '-f', 'null',
+      '-',
+    ];
+
+    log('info', 'Testing system audio device', { deviceId, args });
+
+    const proc = spawn(ffmpegPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    let stderr = '';
+
+    proc.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString();
+      // Stream intermediate levels to renderer
+      const rmsMatch = data.toString().match(/mean_volume:\s*([-\d.]+)\s*dB/);
+      if (rmsMatch) {
+        const db = parseFloat(rmsMatch[1]);
+        sendToRenderer('audio:test-level', { deviceId, db });
+      }
+    });
+
+    proc.on('close', (code) => {
+      // Parse volumedetect output
+      const maxMatch = stderr.match(/max_volume:\s*([-\d.]+)\s*dB/);
+      const meanMatch = stderr.match(/mean_volume:\s*([-\d.]+)\s*dB/);
+
+      if (maxMatch) {
+        const maxDb = parseFloat(maxMatch[1]);
+        const meanDb = meanMatch ? parseFloat(meanMatch[1]) : -91;
+        // Convert dB to 0-1 range: -91dB = silence, 0dB = max
+        const peakLevel = Math.max(0, Math.min(1, (maxDb + 91) / 91));
+        log('info', 'System audio test complete', { maxDb, meanDb, peakLevel });
+        resolve({ success: true, peakLevel });
+      } else if (code !== 0) {
+        log('error', 'System audio test failed', { code, stderr: stderr.slice(-200) });
+        resolve({ success: false, error: 'Could not capture from device' });
+      } else {
+        resolve({ success: true, peakLevel: 0 });
+      }
+    });
+
+    proc.on('error', (err) => {
+      resolve({ success: false, error: err.message });
+    });
+  });
+}
+
 // List all saved recordings
 export function listRecordings(): any[] {
   const outputDir = getOutputDir();

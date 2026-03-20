@@ -29,7 +29,7 @@ export interface AppSettings {
   showCostData: boolean;
   speakerDirectory: string[];
   customVocabulary: VocabularyEntry[];
-  theme: 'dark' | 'light' | 'system' | 'ember' | 'forest' | 'nord' | 'violet' | 'ocean' | 'slate';
+  theme: 'dark' | 'light' | 'system' | 'ember' | 'forest' | 'nord' | 'violet' | 'ocean' | 'slate' | 'linen' | 'paper' | 'sandstone' | 'dawn';
   notebooks: string[];
   activeNotebook: string;
 }

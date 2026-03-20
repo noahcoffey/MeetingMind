@@ -14,6 +14,9 @@ const api = {
   getAudioDevices: () => ipcRenderer.invoke('audio:getDevices'),
   getSystemAudioDevices: () => ipcRenderer.invoke('audio:getSystemDevices'),
 
+  // Audio test
+  testSystemAudio: (deviceId: string) => ipcRenderer.invoke('audio:testSystem', deviceId),
+
   // Recording
   startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId, calendarEventId, userContext, title, notebook),
   stopRecording: () => ipcRenderer.invoke('recording:stop'),
@@ -107,6 +110,7 @@ const api = {
       'crash-recovery',
       'highlights:stream',
       'highlights:complete',
+      'audio:test-level',
       'qa:stream',
       'qa:complete',
       'qa:error',
