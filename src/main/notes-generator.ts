@@ -49,7 +49,7 @@ Generate notes with these exact sections:
 async function getAnthropicKey(): Promise<string> {
   const keytar = require('keytar');
   const key = await keytar.getPassword('MeetingMind', 'anthropic');
-  if (!key) throw new Error('Anthropic API key not configured');
+  if (!key) throw new Error('Anthropic API key not configured. Go to Settings to add your API key.');
   return key;
 }
 
@@ -258,6 +258,8 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
     return { success: false, error: 'Transcript not found. Please transcribe first.' };
   }
 
+  const provider = getSetting('notesProvider') || 'cli';
+
   try {
     const transcriptData = JSON.parse(fs.readFileSync(transcriptPath, 'utf-8'));
     const speakerNames = recording.speakerNames || {};
@@ -266,8 +268,6 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
 
     // Update status
     updateRecordingStatus(recordingId, 'generating');
-
-    const provider = getSetting('notesProvider') || 'cli';
     let fullNotes: string;
 
     if (provider === 'cli') {
@@ -317,7 +317,9 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
   } catch (err: any) {
     log('error', 'Notes generation failed', err);
     updateRecordingStatus(recordingId, 'transcribed');
-    return { success: false, error: err.message };
+    const providerLabel = provider === 'cli' ? 'Claude CLI' : 'Anthropic API';
+    const errorMsg = `[${providerLabel}] ${err.message}`;
+    return { success: false, error: errorMsg };
   }
 }
 

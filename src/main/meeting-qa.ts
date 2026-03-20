@@ -229,8 +229,11 @@ export async function askQuestion(
     return { success: true, entry };
   } catch (err: any) {
     log('error', 'Q&A failed', { recordingId, error: err.message });
-    sendToRenderer('qa:error', { qaId, error: err.message });
-    return { success: false, error: err.message };
+    const provider = getSetting('notesProvider') || 'cli';
+    const providerLabel = provider === 'cli' ? 'Claude CLI' : 'Anthropic API';
+    const errorMsg = `[${providerLabel}] ${err.message}`;
+    sendToRenderer('qa:error', { qaId, error: errorMsg });
+    return { success: false, error: errorMsg };
   }
 }
 

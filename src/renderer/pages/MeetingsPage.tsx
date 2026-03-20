@@ -47,6 +47,8 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [qaStreamingAnswer, setQaStreamingAnswer] = useState('');
   const [qaStreamingId, setQaStreamingId] = useState<string | null>(null);
   const [qaActiveQuestion, setQaActiveQuestion] = useState('');
+  const [notesError, setNotesError] = useState<string | null>(null);
+  const [qaError, setQaError] = useState<string | null>(null);
   const qaScrollRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -167,6 +169,8 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     setQaStreamingAnswer('');
     setQaStreamingId(null);
     setQaIsAsking(false);
+    setNotesError(null);
+    setQaError(null);
 
     const freshRec = await window.meetingMind.getRecording(rec.id);
     if (freshRec) {
@@ -220,6 +224,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     setNotesContent('');
     setIsStreaming(true);
     setIsLoadingNotes(true);
+    setNotesError(null);
 
     // Replace stream listener for manual generation (shows chunks live)
     window.meetingMind.removeAllListeners('notes:stream');
@@ -241,7 +246,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     if (!result.success) {
       setIsStreaming(false);
       setIsLoadingNotes(false);
-      showToast(`Notes generation failed: ${result.error}`);
+      setNotesError(result.error || 'Unknown error');
     }
   }
 
@@ -315,6 +320,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     setQaActiveQuestion(question);
     setQaIsAsking(true);
     setQaStreamingAnswer('');
+    setQaError(null);
 
     // Set up streaming listener
     window.meetingMind.removeAllListeners('qa:stream');
@@ -347,7 +353,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       setQaIsAsking(false);
       setQaStreamingAnswer('');
       setQaStreamingId(null);
-      showToast(`Question failed: ${error}`);
+      setQaError(error);
     });
 
     const result = await (window.meetingMind as any).askQuestion(selectedMeeting.id, question);
@@ -355,7 +361,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       setQaIsAsking(false);
       setQaStreamingAnswer('');
       setQaStreamingId(null);
-      showToast(`Question failed: ${result.error}`);
+      setQaError(result.error || 'Unknown error');
     }
   }
 
@@ -763,11 +769,13 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
               )}
 
               {/* Transcription error */}
-              {!isTranscribing && transcriptionStatus && transcriptionStatus.startsWith('Error') && (
-                <div className="card" style={{ borderColor: 'var(--accent-red-glow)' }}>
-                  <div style={{ color: 'var(--accent-primary)', fontSize: 13 }}>{transcriptionStatus}</div>
-                  <button className="btn btn-secondary" onClick={handleTranscribe} style={{ marginTop: 8 }}>Retry</button>
-                </div>
+              {!isTranscribing && transcriptionStatus && (transcriptionStatus.startsWith('Error') || transcriptionStatus.startsWith('Failed')) && (
+                <ErrorCard
+                  title="Transcription Failed"
+                  error={transcriptionStatus.replace(/^(Error|Failed):\s*/, '')}
+                  onRetry={handleTranscribe}
+                  onDismiss={() => setTranscriptionStatus('')}
+                />
               )}
 
               {/* Tab bar for Notes / Transcript — pinned */}
@@ -836,8 +844,18 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                 </div>
               )}
 
+              {/* Notes error */}
+              {detailTab === 'notes' && notesError && (
+                <ErrorCard
+                  title="Notes Generation Failed"
+                  error={notesError}
+                  onRetry={handleGenerateNotes}
+                  onDismiss={() => setNotesError(null)}
+                />
+              )}
+
               {/* Notes tab */}
-              {detailTab === 'notes' && (isStreaming || isLoadingNotes || notesContent || selectedMeeting.status === 'complete') && (
+              {detailTab === 'notes' && !notesError && (isStreaming || isLoadingNotes || notesContent || selectedMeeting.status === 'complete') && (
                 <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
                   <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 8 }}>
                     Meeting Notes
@@ -907,7 +925,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                     ref={qaScrollRef}
                     style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}
                   >
-                    {qaEntries.length === 0 && !qaIsAsking && (
+                    {qaEntries.length === 0 && !qaIsAsking && !qaError && (
                       <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4, marginBottom: 8 }}>
                           <circle cx="12" cy="12" r="10" />
@@ -918,6 +936,16 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                         <div style={{ fontSize: 12, marginTop: 4 }}>
                           The full transcript and notes will be provided as context.
                         </div>
+                      </div>
+                    )}
+
+                    {qaError && (
+                      <div style={{ padding: '0 4px', marginBottom: 12 }}>
+                        <ErrorCard
+                          title="Question Failed"
+                          error={qaError}
+                          onDismiss={() => setQaError(null)}
+                        />
                       </div>
                     )}
 
@@ -1158,6 +1186,83 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       {/* Toast */}
       {toastMessage && <div className="toast">{toastMessage}</div>}
     </>
+  );
+}
+
+function ErrorCard({ title, error, onRetry, onDismiss }: {
+  title: string;
+  error: string;
+  onRetry?: () => void;
+  onDismiss?: () => void;
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(`${title}\n\n${error}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="card" style={{
+      border: '1px solid var(--accent-primary)',
+      background: 'var(--accent-red-tint)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-primary)', marginBottom: 4 }}>{title}</div>
+          <div style={{
+            fontSize: 12,
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+            overflow: 'hidden',
+            maxHeight: expanded ? 'none' : '2.8em',
+          }}>
+            {error}
+          </div>
+          {error.length > 120 && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              style={{
+                background: 'none', border: 'none', color: 'var(--accent-blue)',
+                cursor: 'pointer', fontSize: 11, padding: '4px 0 0',
+              }}
+            >
+              {expanded ? 'Show less' : 'Show full error'}
+            </button>
+          )}
+        </div>
+        {onDismiss && (
+          <button
+            onClick={onDismiss}
+            style={{
+              background: 'none', border: 'none', color: 'var(--text-muted)',
+              cursor: 'pointer', padding: '0 2px', fontSize: 16, lineHeight: 1, flexShrink: 0,
+            }}
+          >&times;</button>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        {onRetry && (
+          <button className="btn btn-secondary" onClick={onRetry} style={{ fontSize: 12, padding: '4px 12px' }}>
+            Retry
+          </button>
+        )}
+        <button
+          className="btn btn-ghost"
+          onClick={handleCopy}
+          style={{ fontSize: 12, padding: '4px 12px' }}
+        >
+          {copied ? 'Copied!' : 'Copy Error'}
+        </button>
+      </div>
+    </div>
   );
 }
 

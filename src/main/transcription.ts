@@ -14,7 +14,7 @@ const POLL_INTERVAL = 10000;
 async function getApiKey(service: string): Promise<string> {
   const keytar = require('keytar');
   const key = await keytar.getPassword('MeetingMind', service);
-  if (!key) throw new Error(`${service} API key not configured`);
+  if (!key) throw new Error(`${service} API key not configured. Go to Settings to add your API key.`);
   return key;
 }
 
@@ -68,7 +68,10 @@ async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: nu
     body: audioData,
   });
 
-  if (!uploadResponse.ok) throw new Error(`Upload failed: ${uploadResponse.status}`);
+  if (!uploadResponse.ok) {
+    const errBody = await uploadResponse.text().catch(() => '');
+    throw new Error(`AssemblyAI upload failed (HTTP ${uploadResponse.status}): ${errBody || 'Check your API key in Settings'}`);
+  }
 
   const { upload_url } = await uploadResponse.json() as { upload_url: string };
   log('info', 'Audio uploaded to AssemblyAI', { upload_url });
@@ -90,7 +93,10 @@ async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: nu
     }),
   });
 
-  if (!transcriptResponse.ok) throw new Error(`Transcription request failed: ${transcriptResponse.status}`);
+  if (!transcriptResponse.ok) {
+    const errBody = await transcriptResponse.text().catch(() => '');
+    throw new Error(`AssemblyAI transcription request failed (HTTP ${transcriptResponse.status}): ${errBody || 'Unknown error'}`);
+  }
 
   const { id: transcriptId } = await transcriptResponse.json() as { id: string };
   log('info', 'Transcription created', { transcriptId });
@@ -320,8 +326,10 @@ export async function startTranscription(recordingId: string): Promise<{ success
   } catch (err: any) {
     log('error', 'Transcription failed', err);
     updateRecordingStatus(recordingId, 'recorded');
-    sendProgress('error', `Transcription failed: ${err.message}`);
-    return { success: false, error: err.message };
+    const providerLabel = { 'assemblyai': 'AssemblyAI', 'openai-whisper': 'OpenAI Whisper', 'deepgram': 'Deepgram' }[provider] || provider;
+    const errorMsg = `[${providerLabel}] ${err.message}`;
+    sendProgress('error', errorMsg);
+    return { success: false, error: errorMsg };
   }
 }
 
