@@ -71,6 +71,9 @@ const api = {
   setRecordingTags: (recordingId: string, tags: string[]) => ipcRenderer.invoke('recordings:setTags', recordingId, tags),
   getAllTags: () => ipcRenderer.invoke('recordings:getAllTags'),
 
+  // Sentiment
+  analyzeSentiment: (recordingId: string) => ipcRenderer.invoke('sentiment:analyze', recordingId),
+
   // Analytics
   getAnalyticsStats: () => ipcRenderer.invoke('analytics:getStats'),
   getTrendInsights: () => ipcRenderer.invoke('analytics:getTrends'),
@@ -114,6 +117,7 @@ const api = {
       'qa:stream',
       'qa:complete',
       'qa:error',
+      'sentiment:complete',
     ];
     if (validChannels.includes(channel)) {
       const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args);

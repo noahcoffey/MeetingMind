@@ -20,6 +20,7 @@ export interface AnalyticsStats {
   totalTranscriptionCost: number;
   averageTranscriptionCost: number;
   transcriptionCostPerWeek: { week: string; cost: number }[];
+  sentimentDistribution: { label: string; count: number }[];
 }
 
 function getOutputDir(): string {
@@ -55,6 +56,7 @@ export function getAnalyticsStats(): AnalyticsStats {
     totalTranscriptionCost: 0,
     averageTranscriptionCost: 0,
     transcriptionCostPerWeek: [],
+    sentimentDistribution: [],
   };
 
   if (recordings.length === 0) return stats;
@@ -64,6 +66,7 @@ export function getAnalyticsStats(): AnalyticsStats {
   let totalCost = 0;
   let costCount = 0;
   const tagCounts: Record<string, number> = {};
+  const sentimentCounts: Record<string, number> = {};
 
   for (const rec of recordings) {
     const duration = rec.duration || 0;
@@ -88,6 +91,12 @@ export function getAnalyticsStats(): AnalyticsStats {
     if ((rec as any).transcriptionCost?.estimatedCost) {
       totalCost += (rec as any).transcriptionCost.estimatedCost;
       costCount++;
+    }
+
+    // Sentiment counts
+    if ((rec as any).sentiment?.label) {
+      const label = (rec as any).sentiment.label;
+      sentimentCounts[label] = (sentimentCounts[label] || 0) + 1;
     }
 
     // Longest/shortest
@@ -181,6 +190,11 @@ export function getAnalyticsStats(): AnalyticsStats {
     week: b.week,
     cost: Math.round(costBuckets[b.week] * 100) / 100,
   }));
+
+  // Sentiment distribution
+  stats.sentimentDistribution = Object.entries(sentimentCounts)
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count);
 
   return stats;
 }

@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, powerSaveBlocker } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
@@ -34,6 +34,15 @@ interface ActiveRecording {
 }
 
 let activeRecording: ActiveRecording | null = null;
+let powerSaveBlockerId: number | null = null;
+
+function releasePowerSaveBlocker(): void {
+  if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+    powerSaveBlocker.stop(powerSaveBlockerId);
+    log('info', `Power save blocker released (id: ${powerSaveBlockerId})`);
+  }
+  powerSaveBlockerId = null;
+}
 
 function getTempDir(): string {
   return path.join(app.getPath('userData'), 'recordings', 'temp');
@@ -86,6 +95,10 @@ export function startRecording(deviceId: string, systemAudioDeviceId?: string, c
   };
 
   log('info', `Starting recording session ${sessionId}`, { deviceId });
+
+  // Prevent system sleep during recording
+  powerSaveBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+  log('info', `Power save blocker started (id: ${powerSaveBlockerId})`);
 
   // Start first chunk
   startChunk();
@@ -304,6 +317,7 @@ export async function cancelRecording(): Promise<{ success: boolean; error?: str
   if (fs.existsSync(tempManifest)) fs.unlinkSync(tempManifest);
   try { fs.rmdirSync(recording.tempDir); } catch {}
 
+  releasePowerSaveBlocker();
   log('info', `Recording ${recording.sessionId} cancelled and discarded`);
   activeRecording = null;
   return { success: true };
@@ -334,6 +348,7 @@ export async function stopRecording(): Promise<{ success: boolean; recordingId?:
   // Stop intervals
   if (recording.manifestInterval) clearInterval(recording.manifestInterval);
   if (recording.diskCheckInterval) clearInterval(recording.diskCheckInterval);
+  releasePowerSaveBlocker();
 
   // Write final manifest
   writeManifest();

@@ -14,7 +14,7 @@ import {
   testSystemAudio,
 } from './recording-manager';
 import { startTranscription, getTranscriptionStatus } from './transcription';
-import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian } from './notes-generator';
+import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyzeSentiment } from './notes-generator';
 import { getCalendarEvents, invalidateCalendarCache, connectGoogle, connectMicrosoft, disconnectCalendar } from './calendar';
 import { listSystemAudioDevices } from './system-audio';
 import { copyNotesToClipboard, exportNotesAsPDF, emailNotes } from './export';
@@ -304,6 +304,11 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('recordings:getAllTags', async () => {
     return getAllTags();
+  });
+
+  // Sentiment
+  ipcMain.handle('sentiment:analyze', async (_event, recordingId: string) => {
+    return analyzeSentiment(recordingId);
   });
 
   // Analytics

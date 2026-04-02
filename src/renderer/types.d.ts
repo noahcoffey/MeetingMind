@@ -43,6 +43,7 @@ export interface MeetingMindAPI {
   getAllTags: () => Promise<string[]>;
   getAnalyticsStats: () => Promise<AnalyticsStats>;
   getTrendInsights: () => Promise<string>;
+  analyzeSentiment: (recordingId: string) => Promise<{ success: boolean; sentiment?: { label: string; explanation: string; analyzedAt: string }; error?: string }>;
   getHighlightsPreview: (startDate: string, endDate: string) => Promise<HighlightsPreview>;
   generateHighlights: (startDate: string, endDate: string) => Promise<{ success: boolean; report?: string; error?: string; meetingCount?: number }>;
   listSavedHighlights: () => Promise<SavedHighlight[]>;
@@ -75,6 +76,11 @@ export interface Recording {
     costPerHour: number;
     estimatedCost: number;
     timestamp: string;
+  };
+  sentiment?: {
+    label: string;
+    explanation: string;
+    analyzedAt: string;
   };
 }
 
@@ -115,6 +121,7 @@ export interface AnalyticsStats {
   longestMeeting: { id: string; title: string; duration: number } | null;
   shortestMeeting: { id: string; title: string; duration: number } | null;
   recentTrend: 'increasing' | 'decreasing' | 'stable';
+  sentimentDistribution: { label: string; count: number }[];
 }
 
 export interface HighlightsPreview {

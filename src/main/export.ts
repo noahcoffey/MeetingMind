@@ -141,7 +141,8 @@ export function copyNotesToClipboard(recordingId: string): { success: boolean; e
       return { success: false, error: 'Recording or notes not found' };
     }
 
-    clipboard.writeText(result.content);
+    const html = markdownToHtml(result.content);
+    clipboard.write({ text: result.content, html });
     log('info', `Notes copied to clipboard for recording ${recordingId}`);
     return { success: true };
   } catch (err) {

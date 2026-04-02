@@ -13,6 +13,7 @@ interface AnalyticsStats {
   totalTranscriptionCost: number;
   averageTranscriptionCost: number;
   transcriptionCostPerWeek: { week: string; cost: number }[];
+  sentimentDistribution: { label: string; count: number }[];
 }
 
 function formatDuration(seconds: number): string {
@@ -130,7 +131,7 @@ export default function AnalyticsPage() {
         {/* Meetings per week (last 12 weeks) */}
         <div className="card" style={{ marginBottom: 16 }}>
           <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16 }}>Weekly Activity</h3>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 120 }}>
             {stats.meetingsPerWeek.map((w, i) => (
               <div
                 key={i}
@@ -143,6 +144,16 @@ export default function AnalyticsPage() {
                   gap: 2,
                 }}
               >
+                {w.count > 0 && (
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap' }}>
+                    {w.count}
+                  </span>
+                )}
+                {w.count > 0 && (
+                  <span style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                    {(() => { const h = Math.round(w.totalMinutes / 30) / 2; return h % 1 === 0 ? `${h} hrs` : `${h} hrs`; })()}
+                  </span>
+                )}
                 <div style={{
                   width: '100%',
                   height: `${Math.max(2, (w.count / maxWeekCount) * 70)}px`,
@@ -211,6 +222,58 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        {/* Meeting Sentiment */}
+        {stats.sentimentDistribution && stats.sentimentDistribution.length > 0 && (() => {
+          const sentimentColors: Record<string, string> = {
+            'Collaborative': 'var(--accent-blue)',
+            'Productive': 'var(--accent-green)',
+            'Tense': '#e67e22',
+            'Contentious': '#e74c3c',
+            'Casual': '#1abc9c',
+            'Informational': 'var(--text-muted)',
+            'Brainstorming': '#9b59b6',
+            'Decision-focused': '#5b6abf',
+            'Celebratory': '#f1c40f',
+            'Neutral': 'var(--text-muted)',
+          };
+          const maxCount = Math.max(...stats.sentimentDistribution.map(s => s.count), 1);
+          return (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16 }}>Meeting Sentiment</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {stats.sentimentDistribution.map(s => {
+                  const color = sentimentColors[s.label] || 'var(--text-muted)';
+                  return (
+                    <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{
+                        width: 100,
+                        fontSize: 12,
+                        fontWeight: 500,
+                        color,
+                        textAlign: 'right',
+                        flexShrink: 0,
+                      }}>{s.label}</span>
+                      <div style={{ flex: 1, height: 18, background: 'var(--bg-input)', borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{
+                          width: `${(s.count / maxCount) * 100}%`,
+                          height: '100%',
+                          background: color,
+                          borderRadius: 4,
+                          opacity: 0.7,
+                          transition: 'width 300ms ease',
+                        }} />
+                      </div>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', width: 24, textAlign: 'right', flexShrink: 0 }}>
+                        {s.count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Transcription Cost */}
         {hasCostData && (
           <>
@@ -226,7 +289,7 @@ export default function AnalyticsPage() {
 
             <div className="card" style={{ marginBottom: 16 }}>
               <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 16 }}>Weekly Transcription Spend</h3>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 80 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 100 }}>
                 {stats.transcriptionCostPerWeek.map((w, i) => (
                   <div
                     key={i}
@@ -236,8 +299,14 @@ export default function AnalyticsPage() {
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
+                      gap: 2,
                     }}
                   >
+                    {w.cost > 0 && (
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                        ${w.cost.toFixed(2)}
+                      </span>
+                    )}
                     <div style={{
                       width: '100%',
                       height: `${Math.max(2, (w.cost / maxWeekCost) * 60)}px`,

@@ -83,9 +83,15 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       refreshSelectedMeeting();
     });
 
+    // Listen for sentiment analysis completion
+    const unsubSentiment = window.meetingMind.on('sentiment:complete', () => {
+      refreshSelectedMeeting();
+    });
+
     return () => {
       unsubProgress();
       unsubNotesComplete();
+      unsubSentiment();
       window.meetingMind.removeAllListeners('notes:stream');
       window.meetingMind.removeAllListeners('qa:stream');
       window.meetingMind.removeAllListeners('qa:complete');
@@ -684,6 +690,19 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                             <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleGenerateNotes(); }} disabled={isStreaming}>
                               Regenerate Notes
                             </button>
+                            <button className="actions-dropdown-item" onClick={async () => {
+                              setShowActionsMenu(false);
+                              showToast('Analyzing sentiment...');
+                              const r = await (window.meetingMind as any).analyzeSentiment(selectedMeeting.id);
+                              if (r.success) {
+                                showToast(`Sentiment: ${r.sentiment.label}`);
+                                refreshSelectedMeeting();
+                              } else {
+                                showToast(`Sentiment analysis failed: ${r.error}`);
+                              }
+                            }}>
+                              {(selectedMeeting as any).sentiment ? 'Regenerate Sentiment' : 'Analyze Sentiment'}
+                            </button>
                             <div className="actions-dropdown-sep" />
                           </>
                         )}
@@ -731,13 +750,49 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                     )}
                   </div>
                 </div>
-                {/* Row 2: tags */}
-                <div style={{ marginTop: 6 }}>
+                {/* Row 2: tags + sentiment */}
+                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <TagEditor
                     tags={selectedMeeting.tags || []}
                     allTags={allTags}
                     onChange={handleTagsChange}
                   />
+                  {(selectedMeeting as any).sentiment?.label && (() => {
+                    const sentimentColors: Record<string, string> = {
+                      'Collaborative': 'var(--accent-blue)',
+                      'Productive': 'var(--accent-green)',
+                      'Tense': '#e67e22',
+                      'Contentious': '#e74c3c',
+                      'Casual': '#1abc9c',
+                      'Informational': 'var(--text-muted)',
+                      'Brainstorming': '#9b59b6',
+                      'Decision-focused': '#5b6abf',
+                      'Celebratory': '#f1c40f',
+                      'Neutral': 'var(--text-muted)',
+                    };
+                    const label = (selectedMeeting as any).sentiment.label;
+                    const color = sentimentColors[label] || 'var(--text-muted)';
+                    return (
+                      <span
+                        title={(selectedMeeting as any).sentiment.explanation}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '2px 10px',
+                          borderRadius: 10,
+                          fontSize: 11,
+                          fontWeight: 500,
+                          color,
+                          background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                          border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+                          cursor: 'default',
+                        }}
+                      >
+                        {label}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 

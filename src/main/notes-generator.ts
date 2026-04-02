@@ -295,6 +295,11 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
       log('warn', 'Auto-tagging failed (non-blocking)', { recordingId, error: err.message });
     });
 
+    // Fire-and-forget sentiment analysis
+    analyzeSentiment(recordingId).catch((err: any) => {
+      log('warn', 'Sentiment analysis failed (non-blocking)', { recordingId, error: err.message });
+    });
+
     // Auto-save to Obsidian if enabled
     if (getSetting('autoSaveToObsidian') && getSetting('obsidianVaultPath')) {
       try {
@@ -404,6 +409,96 @@ export async function suggestTitle(recordingId: string): Promise<string> {
     }
   } catch {
     return 'Untitled Meeting';
+  }
+}
+
+export async function analyzeSentiment(recordingId: string): Promise<{ success: boolean; sentiment?: { label: string; explanation: string; analyzedAt: string }; error?: string }> {
+  const recording = getRecording(recordingId);
+  if (!recording) return { success: false, error: 'Recording not found' };
+
+  try {
+    const outputDir = path.dirname(recording.audioPath);
+    const transcriptPath = path.join(outputDir, 'transcript.json');
+
+    if (!fs.existsSync(transcriptPath)) return { success: false, error: 'Transcript not found' };
+
+    const transcriptData = JSON.parse(fs.readFileSync(transcriptPath, 'utf-8'));
+    const speakerNames = recording.speakerNames || {};
+    const transcript = formatTranscript(transcriptData, speakerNames);
+
+    const sentimentPrompt = `Based on this meeting transcript, classify the overall sentiment/mood into exactly ONE label from this list: Collaborative, Productive, Tense, Contentious, Casual, Informational, Brainstorming, Decision-focused, Celebratory, Neutral.
+
+Then provide a 1-sentence explanation (max 20 words) of why you chose that label.
+
+Return ONLY valid JSON in this format: {"label": "...", "explanation": "..."}
+
+Transcript:
+${transcript}`;
+
+    const provider = getSetting('notesProvider') || 'cli';
+    let rawResponse: string;
+
+    if (provider === 'cli') {
+      const claudePath = getClaudePath();
+      rawResponse = await new Promise<string>((resolve, reject) => {
+        const proc = spawn(claudePath, ['-p', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'text'], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          env: getShellEnv(),
+        });
+        let output = '';
+        proc.stdout.on('data', (data: Buffer) => { output += data.toString(); });
+        proc.on('close', (code) => {
+          if (code === 0 && output.trim()) resolve(output.trim());
+          else reject(new Error(`claude CLI exited with code ${code}`));
+        });
+        proc.on('error', (err) => reject(err));
+        proc.stdin.write(sentimentPrompt);
+        proc.stdin.end();
+      });
+    } else {
+      const apiKey = await getAnthropicKey();
+      const client = new Anthropic({ apiKey });
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: sentimentPrompt }],
+      });
+      rawResponse = (response.content[0] as any).text?.trim() || '';
+    }
+
+    // Parse JSON — try direct parse first, then extract with regex
+    let parsed: { label: string; explanation: string };
+    try {
+      parsed = JSON.parse(rawResponse);
+    } catch {
+      const match = rawResponse.match(/\{[^}]*"label"\s*:\s*"[^"]*"[^}]*"explanation"\s*:\s*"[^"]*"[^}]*\}/);
+      if (match) {
+        parsed = JSON.parse(match[0]);
+      } else {
+        return { success: false, error: 'Could not parse sentiment response' };
+      }
+    }
+
+    const sentiment = {
+      label: parsed.label,
+      explanation: parsed.explanation,
+      analyzedAt: new Date().toISOString(),
+    };
+
+    // Write to manifest
+    const manifestPath = path.join(outputDir, 'manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      manifest.sentiment = sentiment;
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    }
+
+    sendToRenderer('sentiment:complete', { recordingId, sentiment });
+    log('info', 'Sentiment analysis complete', { recordingId, label: sentiment.label });
+    return { success: true, sentiment };
+  } catch (err: any) {
+    log('error', 'Sentiment analysis failed', { recordingId, error: err.message });
+    return { success: false, error: err.message };
   }
 }
 
