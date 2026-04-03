@@ -46,7 +46,7 @@ function sendProgress(status: string, message: string, progress?: number): void 
 
 // Cost rates per hour for each provider
 const COST_RATES: Record<string, { perHour: number; label: string }> = {
-  'assemblyai': { perHour: 0.17, label: 'AssemblyAI Universal-2 + Speaker Diarization' },
+  'assemblyai': { perHour: 0.17, label: 'AssemblyAI Universal-3-Pro + Speaker Diarization' },
   'openai-whisper': { perHour: 0.36, label: 'OpenAI Whisper ($0.006/min)' },
   'deepgram': { perHour: 0.258, label: 'Deepgram Nova-2 + Diarization' },
 };
@@ -86,6 +86,7 @@ async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: nu
     },
     body: JSON.stringify({
       audio_url: upload_url,
+      speech_models: ['universal-3-pro', 'universal-2'],
       speaker_labels: true,
       punctuate: true,
       format_text: true,

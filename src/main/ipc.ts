@@ -21,6 +21,7 @@ import { copyNotesToClipboard, exportNotesAsPDF, emailNotes } from './export';
 import { searchRecordings } from './search';
 import { setTags, getAllTags } from './tagger';
 import { getAnalyticsStats, generateTrendInsights } from './analytics';
+import { createProject, renameProject, deleteProject, moveToProject, generateProjectSummary, getProjectSummary, updateProjectsForNotebookRename, deleteProjectsForNotebook } from './project-manager';
 import { generateWeeklyHighlights, getHighlightsPreview, listSavedHighlights, getSavedHighlight, deleteSavedHighlight } from './weekly-highlights';
 import { askQuestion, getQuestions, deleteQuestion, appendQAToObsidian } from './meeting-qa';
 import * as fs from 'fs';
@@ -304,6 +305,43 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('recordings:getAllTags', async () => {
     return getAllTags();
+  });
+
+  // Projects
+  ipcMain.handle('projects:list', async () => {
+    return getSetting('projects') || [];
+  });
+
+  ipcMain.handle('projects:create', async (_event, name: string, notebook: string) => {
+    return createProject(name, notebook);
+  });
+
+  ipcMain.handle('projects:rename', async (_event, id: string, name: string) => {
+    return renameProject(id, name);
+  });
+
+  ipcMain.handle('projects:delete', async (_event, id: string) => {
+    return deleteProject(id);
+  });
+
+  ipcMain.handle('projects:moveRecording', async (_event, recordingId: string, projectId: string | null) => {
+    return moveToProject(recordingId, projectId);
+  });
+
+  ipcMain.handle('projects:generateSummary', async (_event, projectId: string) => {
+    return generateProjectSummary(projectId);
+  });
+
+  ipcMain.handle('projects:getSummary', async (_event, projectId: string) => {
+    return getProjectSummary(projectId);
+  });
+
+  ipcMain.handle('projects:notebookRenamed', async (_event, oldName: string, newName: string) => {
+    updateProjectsForNotebookRename(oldName, newName);
+  });
+
+  ipcMain.handle('projects:notebookDeleted', async (_event, notebookName: string) => {
+    deleteProjectsForNotebook(notebookName);
   });
 
   // Sentiment

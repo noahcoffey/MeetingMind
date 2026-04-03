@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Recording } from '../types';
+import type { Recording, Project } from '../types';
 import TagEditor from '../components/TagEditor';
 import TranscriptViewer from '../components/TranscriptViewer';
 import AudioPlayer from '../components/AudioPlayer';
@@ -12,6 +12,8 @@ interface MeetingsPageProps {
   initialMeetingId?: string | null;
   activeNotebook?: string;
   notebooks?: string[];
+  activeProjectFilter?: string | null;
+  projects?: Project[];
 }
 
 type DetailTab = 'notes' | 'transcript' | 'speakers' | 'ask';
@@ -23,7 +25,7 @@ interface QAEntry {
   timestamp: string;
 }
 
-export default function MeetingsPage({ initialMeetingId, activeNotebook, notebooks }: MeetingsPageProps) {
+export default function MeetingsPage({ initialMeetingId, activeNotebook, notebooks, activeProjectFilter, projects = [] }: MeetingsPageProps) {
   const [meetings, setMeetings] = useState<Recording[]>([]);
   const [selectedMeeting, setSelectedMeeting] = useState<Recording | null>(null);
   const [notesContent, setNotesContent] = useState('');
@@ -49,6 +51,10 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [qaActiveQuestion, setQaActiveQuestion] = useState('');
   const [notesError, setNotesError] = useState<string | null>(null);
   const [qaError, setQaError] = useState<string | null>(null);
+  const [projectSummary, setProjectSummary] = useState<string | null>(null);
+  const [projectSummaryStreaming, setProjectSummaryStreaming] = useState('');
+  const [isGeneratingProjectSummary, setIsGeneratingProjectSummary] = useState(false);
+  const [showProjectSummary, setShowProjectSummary] = useState(false);
   const qaScrollRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -99,6 +105,18 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       if (refreshRef.current) clearInterval(refreshRef.current);
     };
   }, []);
+
+  // Load project summary when project filter changes
+  useEffect(() => {
+    if (activeProjectFilter) {
+      (window.meetingMind as any).getProjectSummary(activeProjectFilter).then((s: string | null) => {
+        setProjectSummary(s);
+      });
+    } else {
+      setProjectSummary(null);
+      setShowProjectSummary(false);
+    }
+  }, [activeProjectFilter]);
 
   // Auto-scroll Q&A when streaming
   useEffect(() => {
@@ -430,15 +448,19 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     }
   }
 
-  // Filter meetings by notebook, then by tag
+  // Filter meetings by notebook, then by project, then by tag
   // Recordings without a notebook field belong to the first (default) notebook
   const defaultNotebook = notebooks?.[0] || 'Personal';
   const notebookMeetings = activeNotebook
     ? meetings.filter(r => (r.notebook || defaultNotebook) === activeNotebook)
     : meetings;
-  const filteredMeetings = filterTag
-    ? notebookMeetings.filter(r => r.tags?.includes(filterTag))
+  const projectMeetings = activeProjectFilter
+    ? notebookMeetings.filter(r => (r as any).project === activeProjectFilter)
     : notebookMeetings;
+  const filteredMeetings = filterTag
+    ? projectMeetings.filter(r => r.tags?.includes(filterTag))
+    : projectMeetings;
+  const activeProject = activeProjectFilter ? projects.find(p => p.id === activeProjectFilter) : null;
 
   // Group meetings by day
   function getDayLabel(dateStr: string): string {
@@ -466,9 +488,65 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   return (
     <>
       <div className="page-header">
-        <h1>Meetings</h1>
+        <h1>{activeProject ? activeProject.name : 'Meetings'}</h1>
+        {activeProject && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <button
+              className="btn btn-secondary"
+              style={{ fontSize: 12, padding: '4px 10px' }}
+              onClick={() => setShowProjectSummary(!showProjectSummary)}
+            >
+              {showProjectSummary ? 'Hide Summary' : 'Summary'}
+            </button>
+            <button
+              className="btn btn-secondary"
+              style={{ fontSize: 12, padding: '4px 10px' }}
+              disabled={isGeneratingProjectSummary}
+              onClick={async () => {
+                setIsGeneratingProjectSummary(true);
+                setShowProjectSummary(true);
+                setProjectSummaryStreaming('');
+                const unsub = window.meetingMind.on('project-summary:stream', (chunk: unknown) => {
+                  setProjectSummaryStreaming(prev => prev + (chunk as string));
+                });
+                const result = await (window.meetingMind as any).generateProjectSummary(activeProject.id);
+                unsub();
+                setIsGeneratingProjectSummary(false);
+                if (result.success) {
+                  setProjectSummary(result.summary);
+                  setProjectSummaryStreaming('');
+                } else {
+                  showToast(`Summary failed: ${result.error}`);
+                }
+              }}
+            >
+              {isGeneratingProjectSummary ? 'Generating...' : (projectSummary ? 'Update Summary' : 'Generate Summary')}
+            </button>
+          </div>
+        )}
       </div>
-      <div className="page-content" style={{ display: 'flex', gap: 20, height: 'calc(100vh - 112px)' }}>
+      {/* Project Summary Panel */}
+      {activeProject && showProjectSummary && (
+        <div style={{ padding: '0 20px 12px', maxHeight: 300, overflowY: 'auto' }}>
+          <div className="card" style={{ padding: 16 }}>
+            {isGeneratingProjectSummary && projectSummaryStreaming ? (
+              <MarkdownRenderer content={projectSummaryStreaming} />
+            ) : isGeneratingProjectSummary ? (
+              <div style={{ textAlign: 'center', padding: 20 }}>
+                <div className="pipeline-spinner" style={{ margin: '0 auto 8px' }} />
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Generating project summary...</div>
+              </div>
+            ) : projectSummary ? (
+              <MarkdownRenderer content={projectSummary} />
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: 12 }}>
+                No summary yet. Click "Generate Summary" to create one.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="page-content" style={{ display: 'flex', gap: 20, height: activeProject && showProjectSummary ? 'calc(100vh - 412px)' : 'calc(100vh - 112px)' }}>
         {/* List */}
         <div style={{ flex: '0 0 340px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {/* Fixed toolbar */}
@@ -524,6 +602,11 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                   <div
                     key={rec.id}
                     className="meeting-item"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('text/recording-id', rec.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
                     onClick={() => selectMeeting(rec)}
                     style={{
                       borderColor: selectedMeeting?.id === rec.id ? 'var(--accent-blue)' : undefined,
@@ -740,6 +823,43 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                                 {nb}
                               </button>
                             ))}
+                          </>
+                        )}
+                        {projects.length > 0 && (
+                          <>
+                            <div className="actions-dropdown-sep" />
+                            <div style={{ padding: '4px 12px 2px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                              Move to Project
+                            </div>
+                            {(selectedMeeting as any).project && (
+                              <button
+                                className="actions-dropdown-item"
+                                onClick={async () => {
+                                  setShowActionsMenu(false);
+                                  await (window.meetingMind as any).moveToProject(selectedMeeting.id, null);
+                                  loadMeetings();
+                                  showToast('Removed from project');
+                                }}
+                              >
+                                Remove from Project
+                              </button>
+                            )}
+                            {projects
+                              .filter(p => p.notebook === activeNotebook && p.id !== (selectedMeeting as any).project)
+                              .map(p => (
+                                <button
+                                  key={p.id}
+                                  className="actions-dropdown-item"
+                                  onClick={async () => {
+                                    setShowActionsMenu(false);
+                                    await (window.meetingMind as any).moveToProject(selectedMeeting.id, p.id);
+                                    loadMeetings();
+                                    showToast(`Moved to ${p.name}`);
+                                  }}
+                                >
+                                  {p.name}
+                                </button>
+                              ))}
                           </>
                         )}
                         <div className="actions-dropdown-sep" />

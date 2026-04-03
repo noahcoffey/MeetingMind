@@ -7,6 +7,7 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import HighlightsPage from './pages/HighlightsPage';
 import OnboardingFlow from './pages/OnboardingFlow';
 import type { BackgroundJob } from './components/PipelineWidget';
+import type { Project } from './types';
 
 type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
@@ -18,6 +19,8 @@ export default function App() {
   const [backgroundJobs, setBackgroundJobs] = useState<BackgroundJob[]>([]);
   const [notebooks, setNotebooks] = useState<string[]>(['Personal']);
   const [activeNotebook, setActiveNotebook] = useState<string>('Personal');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectFilter, setActiveProjectFilter] = useState<string | null>(null);
   const jobCleanupRef = useRef<Map<string, () => void>>(new Map());
 
   useEffect(() => {
@@ -36,6 +39,8 @@ export default function App() {
       applyTheme(s.theme as string || 'dark');
       setNotebooks((s.notebooks as string[]) || ['Personal']);
       setActiveNotebook((s.activeNotebook as string) || (s.notebooks as string[])?.[0] || 'Personal');
+      setProjects((s.projects as Project[]) || []);
+      setActiveProjectFilter((s.activeProjectFilter as string | null) ?? null);
       if (!s.onboardingComplete) {
         setShowOnboarding(true);
       }
@@ -183,6 +188,44 @@ export default function App() {
     }
   }
 
+  function handleProjectSelect(projectId: string | null) {
+    setActiveProjectFilter(projectId);
+    window.meetingMind.setSetting('activeProjectFilter', projectId);
+    setCurrentPage('meetings');
+  }
+
+  async function handleProjectCreate(name: string) {
+    const project = await (window.meetingMind as any).createProject(name, activeNotebook);
+    setProjects(prev => [...prev, project]);
+  }
+
+  async function handleProjectRename(id: string, name: string) {
+    await (window.meetingMind as any).renameProject(id, name);
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, name } : p));
+  }
+
+  async function handleProjectDelete(id: string) {
+    await (window.meetingMind as any).deleteProject(id);
+    setProjects(prev => prev.filter(p => p.id !== id));
+    if (activeProjectFilter === id) handleProjectSelect(null);
+  }
+
+  async function handleRecordingDroppedOnProject(recordingId: string, projectId: string) {
+    await (window.meetingMind as any).moveToProject(recordingId, projectId);
+  }
+
+  function handleNotebookChangeWithProjects(notebook: string) {
+    handleNotebookChange(notebook);
+    // Clear project filter if it doesn't belong to the new notebook
+    if (activeProjectFilter) {
+      const project = projects.find(p => p.id === activeProjectFilter);
+      if (project && project.notebook !== notebook) {
+        setActiveProjectFilter(null);
+        window.meetingMind.setSetting('activeProjectFilter', null);
+      }
+    }
+  }
+
   function handleNavigate(page: Page) {
     if (page !== 'meetings') {
       setViewRecordingId(null);
@@ -209,8 +252,15 @@ export default function App() {
         onDismissJob={handleDismissJob}
         notebooks={notebooks}
         activeNotebook={activeNotebook}
-        onNotebookChange={handleNotebookChange}
+        onNotebookChange={handleNotebookChangeWithProjects}
         onNotebooksUpdate={handleNotebooksUpdate}
+        projects={projects}
+        activeProjectFilter={activeProjectFilter}
+        onProjectSelect={handleProjectSelect}
+        onProjectCreate={handleProjectCreate}
+        onProjectRename={handleProjectRename}
+        onProjectDelete={handleProjectDelete}
+        onRecordingDroppedOnProject={handleRecordingDroppedOnProject}
       />
       <div className="main-content">
         {currentPage === 'record' && (
@@ -220,7 +270,7 @@ export default function App() {
             activeNotebook={activeNotebook}
           />
         )}
-        {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} activeNotebook={activeNotebook} notebooks={notebooks} />}
+        {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} activeNotebook={activeNotebook} notebooks={notebooks} activeProjectFilter={activeProjectFilter} projects={projects} />}
         {currentPage === 'settings' && <SettingsPage onSettingsChange={loadSettings} />}
         {currentPage === 'highlights' && <HighlightsPage />}
         {currentPage === 'analytics' && <AnalyticsPage />}

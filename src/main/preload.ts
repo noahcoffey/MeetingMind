@@ -71,6 +71,17 @@ const api = {
   setRecordingTags: (recordingId: string, tags: string[]) => ipcRenderer.invoke('recordings:setTags', recordingId, tags),
   getAllTags: () => ipcRenderer.invoke('recordings:getAllTags'),
 
+  // Projects
+  getProjects: () => ipcRenderer.invoke('projects:list'),
+  createProject: (name: string, notebook: string) => ipcRenderer.invoke('projects:create', name, notebook),
+  renameProject: (id: string, name: string) => ipcRenderer.invoke('projects:rename', id, name),
+  deleteProject: (id: string) => ipcRenderer.invoke('projects:delete', id),
+  moveToProject: (recordingId: string, projectId: string | null) => ipcRenderer.invoke('projects:moveRecording', recordingId, projectId),
+  generateProjectSummary: (projectId: string) => ipcRenderer.invoke('projects:generateSummary', projectId),
+  getProjectSummary: (projectId: string) => ipcRenderer.invoke('projects:getSummary', projectId),
+  notebookRenamed: (oldName: string, newName: string) => ipcRenderer.invoke('projects:notebookRenamed', oldName, newName),
+  notebookDeleted: (notebookName: string) => ipcRenderer.invoke('projects:notebookDeleted', notebookName),
+
   // Sentiment
   analyzeSentiment: (recordingId: string) => ipcRenderer.invoke('sentiment:analyze', recordingId),
 
@@ -118,6 +129,8 @@ const api = {
       'qa:complete',
       'qa:error',
       'sentiment:complete',
+      'project-summary:stream',
+      'project-summary:complete',
     ];
     if (validChannels.includes(channel)) {
       const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args);

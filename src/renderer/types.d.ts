@@ -49,6 +49,13 @@ export interface MeetingMindAPI {
   listSavedHighlights: () => Promise<SavedHighlight[]>;
   getSavedHighlight: (id: string) => Promise<string | null>;
   deleteSavedHighlight: (id: string) => Promise<boolean>;
+  getProjects: () => Promise<Project[]>;
+  createProject: (name: string, notebook: string) => Promise<Project>;
+  renameProject: (id: string, name: string) => Promise<{ success: boolean }>;
+  deleteProject: (id: string) => Promise<{ success: boolean }>;
+  moveToProject: (recordingId: string, projectId: string | null) => Promise<{ success: boolean }>;
+  generateProjectSummary: (projectId: string) => Promise<{ success: boolean; summary?: string; error?: string }>;
+  getProjectSummary: (projectId: string) => Promise<string | null>;
   openInFinder: (filePath: string) => Promise<void>;
   openInObsidian: (vaultName: string, filePath: string) => Promise<void>;
   selectFolder: () => Promise<string | null>;
@@ -69,6 +76,7 @@ export interface Recording {
   speakerNames?: Record<string, string>;
   tags?: string[];
   notebook?: string;
+  project?: string;
   transcriptionCost?: {
     provider?: string;
     audioDurationSeconds: number;
@@ -137,6 +145,14 @@ export interface SavedHighlight {
   endDate: string;
   label: string;
   createdAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  notebook: string;
+  createdAt: string;
+  lastSummaryAt: string | null;
 }
 
 declare global {

@@ -5,6 +5,14 @@ export interface VocabularyEntry {
   variants: string[];
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  notebook: string;
+  createdAt: string;
+  lastSummaryAt: string | null;
+}
+
 export interface AppSettings {
   userName: string;
   defaultInputDevice: string;
@@ -32,6 +40,8 @@ export interface AppSettings {
   theme: 'dark' | 'light' | 'system' | 'ember' | 'forest' | 'nord' | 'violet' | 'ocean' | 'slate' | 'linen' | 'paper' | 'sandstone' | 'dawn';
   notebooks: string[];
   activeNotebook: string;
+  projects: Project[];
+  activeProjectFilter: string | null;
 }
 
 const defaults: AppSettings = {
@@ -61,6 +71,8 @@ const defaults: AppSettings = {
   theme: 'dark' as const,
   notebooks: ['Personal'],
   activeNotebook: 'Personal',
+  projects: [],
+  activeProjectFilter: null,
 };
 
 let store: Store<AppSettings>;

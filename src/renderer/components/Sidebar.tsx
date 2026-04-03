@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PipelineWidget, { BackgroundJob } from './PipelineWidget';
+import type { Project } from '../types';
 
 type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
@@ -13,11 +14,20 @@ interface SidebarProps {
   activeNotebook: string;
   onNotebookChange: (notebook: string) => void;
   onNotebooksUpdate: (notebooks: string[]) => void;
+  projects?: Project[];
+  activeProjectFilter?: string | null;
+  onProjectSelect?: (projectId: string | null) => void;
+  onProjectCreate?: (name: string) => void;
+  onProjectRename?: (id: string, name: string) => void;
+  onProjectDelete?: (id: string) => void;
+  onRecordingDroppedOnProject?: (recordingId: string, projectId: string) => void;
 }
 
 export default function Sidebar({
   currentPage, onNavigate, backgroundJobs, onViewJobRecording, onDismissJob,
   notebooks, activeNotebook, onNotebookChange, onNotebooksUpdate,
+  projects = [], activeProjectFilter, onProjectSelect, onProjectCreate,
+  onProjectRename, onProjectDelete, onRecordingDroppedOnProject,
 }: SidebarProps) {
   const [showNotebookMenu, setShowNotebookMenu] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
@@ -76,7 +86,9 @@ export default function Sidebar({
             await (window.meetingMind as any).moveToNotebook(rec.id, trimmed);
           }
         }
-      })();
+        // Update projects associated with the renamed notebook
+        await (window.meetingMind as any).notebookRenamed(oldName, trimmed);
+      })().catch(() => {});
     }
     setEditingIndex(null);
     setEditName('');
@@ -95,7 +107,9 @@ export default function Sidebar({
           await (window.meetingMind as any).moveToNotebook(rec.id, fallback);
         }
       }
-    })();
+      // Delete projects associated with the deleted notebook
+      await (window.meetingMind as any).notebookDeleted(name);
+    })().catch(() => {});
     onNotebooksUpdate(updated);
   }
 
@@ -337,6 +351,17 @@ export default function Sidebar({
         </button>
       </nav>
 
+      <ProjectsSection
+        projects={projects}
+        activeNotebook={activeNotebook}
+        activeProjectFilter={activeProjectFilter ?? null}
+        onProjectSelect={onProjectSelect}
+        onProjectCreate={onProjectCreate}
+        onProjectRename={onProjectRename}
+        onProjectDelete={onProjectDelete}
+        onRecordingDroppedOnProject={onRecordingDroppedOnProject}
+      />
+
       <PipelineWidget
         jobs={backgroundJobs}
         onViewRecording={onViewJobRecording}
@@ -345,6 +370,182 @@ export default function Sidebar({
 
       <div className="sidebar-version">
         MeetingMind v1.0.0
+      </div>
+    </div>
+  );
+}
+
+// --- Projects Section ---
+
+function ProjectsSection({
+  projects, activeNotebook, activeProjectFilter, onProjectSelect,
+  onProjectCreate, onProjectRename, onProjectDelete, onRecordingDroppedOnProject,
+}: {
+  projects: Project[];
+  activeNotebook: string;
+  activeProjectFilter: string | null;
+  onProjectSelect?: (projectId: string | null) => void;
+  onProjectCreate?: (name: string) => void;
+  onProjectRename?: (id: string, name: string) => void;
+  onProjectDelete?: (id: string) => void;
+  onRecordingDroppedOnProject?: (recordingId: string, projectId: string) => void;
+}) {
+  const [isCreating, setIsCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const createInputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  const notebookProjects = projects.filter(p => p.notebook === activeNotebook);
+
+  useEffect(() => {
+    if (isCreating && createInputRef.current) createInputRef.current.focus();
+  }, [isCreating]);
+
+  useEffect(() => {
+    if (editingId && editInputRef.current) editInputRef.current.focus();
+  }, [editingId]);
+
+  function handleCreate() {
+    const trimmed = newName.trim();
+    if (!trimmed || notebookProjects.some(p => p.name === trimmed)) return;
+    onProjectCreate?.(trimmed);
+    setNewName('');
+    setIsCreating(false);
+  }
+
+  function handleRename(id: string) {
+    const trimmed = editName.trim();
+    if (!trimmed || notebookProjects.some(p => p.id !== id && p.name === trimmed)) return;
+    onProjectRename?.(id, trimmed);
+    setEditingId(null);
+  }
+
+  function handleDragOver(e: React.DragEvent, projectId: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverId(projectId);
+  }
+
+  function handleDragLeave() {
+    setDragOverId(null);
+  }
+
+  function handleDrop(e: React.DragEvent, projectId: string) {
+    e.preventDefault();
+    setDragOverId(null);
+    const recordingId = e.dataTransfer.getData('text/recording-id');
+    if (recordingId) {
+      onRecordingDroppedOnProject?.(recordingId, projectId);
+    }
+  }
+
+  return (
+    <div className="sidebar-projects-section">
+      <div className="sidebar-section-header">
+        <span>PROJECTS</span>
+        <button
+          className="sidebar-section-add-btn"
+          onClick={() => { setIsCreating(true); setNewName(''); }}
+          title="New Project"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="sidebar-projects-list">
+        {/* All Meetings */}
+        <button
+          className={`sidebar-project-item ${activeProjectFilter === null ? 'active' : ''}`}
+          onClick={() => onProjectSelect?.(null)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12h4l3-9 4 18 3-9h4" />
+          </svg>
+          All Meetings
+        </button>
+
+        {/* Project items */}
+        {notebookProjects.map(project => (
+          <div
+            key={project.id}
+            className={`sidebar-project-item ${activeProjectFilter === project.id ? 'active' : ''} ${dragOverId === project.id ? 'drag-over' : ''}`}
+            onClick={() => { if (!editingId) onProjectSelect?.(project.id); }}
+            onDragOver={(e) => handleDragOver(e, project.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, project.id)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            {editingId === project.id ? (
+              <input
+                ref={editInputRef}
+                className="sidebar-project-edit-input"
+                value={editName}
+                onChange={e => setEditName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleRename(project.id);
+                  if (e.key === 'Escape') setEditingId(null);
+                }}
+                onBlur={() => setEditingId(null)}
+                onClick={e => e.stopPropagation()}
+              />
+            ) : (
+              <>
+                <span className="sidebar-project-name">{project.name}</span>
+                <span className="sidebar-project-actions">
+                  <button
+                    className="sidebar-project-action-btn"
+                    title="Rename"
+                    onClick={e => { e.stopPropagation(); setEditingId(project.id); setEditName(project.name); }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
+                  <button
+                    className="sidebar-project-action-btn"
+                    title="Delete"
+                    onClick={e => { e.stopPropagation(); onProjectDelete?.(project.id); }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </span>
+              </>
+            )}
+          </div>
+        ))}
+
+        {/* Create new project input */}
+        {isCreating && (
+          <div className="sidebar-project-item" style={{ padding: '4px 8px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <input
+              ref={createInputRef}
+              className="sidebar-project-edit-input"
+              value={newName}
+              placeholder="Project name..."
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleCreate();
+                if (e.key === 'Escape') setIsCreating(false);
+              }}
+              onBlur={() => { if (!newName.trim()) setIsCreating(false); }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
