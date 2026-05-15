@@ -48,7 +48,7 @@ function getTempDir(): string {
   return path.join(app.getPath('userData'), 'recordings', 'temp');
 }
 
-function getFFmpegPath(): string {
+export function getFFmpegPath(): string {
   // In packaged app, ffmpeg is in resources/bin
   const isPackaged = app.isPackaged;
   if (isPackaged) {

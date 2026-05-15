@@ -42,6 +42,8 @@ export interface AppSettings {
   activeNotebook: string;
   projects: Project[];
   activeProjectFilter: string | null;
+  autoNormalizeQuietAudio: boolean;
+  normalizationMethod: 'peak' | 'loudnorm';
 }
 
 const defaults: AppSettings = {
@@ -73,6 +75,8 @@ const defaults: AppSettings = {
   activeNotebook: 'Personal',
   projects: [],
   activeProjectFilter: null,
+  autoNormalizeQuietAudio: true,
+  normalizationMethod: 'loudnorm',
 };
 
 let store: Store<AppSettings>;

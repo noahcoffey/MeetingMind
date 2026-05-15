@@ -148,8 +148,8 @@ export function setupIpcHandlers(): void {
   });
 
   // Transcription
-  ipcMain.handle('transcription:start', async (_event, recordingId: string) => {
-    return startTranscription(recordingId);
+  ipcMain.handle('transcription:start', async (_event, recordingId: string, opts?: { forceNormalize?: boolean }) => {
+    return startTranscription(recordingId, opts || {});
   });
 
   ipcMain.handle('transcription:status', async (_event, recordingId: string) => {

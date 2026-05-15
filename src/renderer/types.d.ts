@@ -21,7 +21,7 @@ export interface MeetingMindAPI {
   getRecordings: () => Promise<Recording[]>;
   getRecording: (id: string) => Promise<Recording | null>;
   deleteRecording: (id: string) => Promise<{ success: boolean; error?: string }>;
-  startTranscription: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
+  startTranscription: (recordingId: string, opts?: { forceNormalize?: boolean }) => Promise<{ success: boolean; error?: string; normalized?: boolean }>;
   getTranscriptionStatus: (recordingId: string) => Promise<{ status: string; progress?: number }>;
   getTranscript: (recordingId: string) => Promise<TranscriptUtterance[]>;
   generateNotes: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
@@ -89,6 +89,25 @@ export interface Recording {
     label: string;
     explanation: string;
     analyzedAt: string;
+  };
+  audioLevel?: {
+    meanVolume: number;
+    maxVolume: number;
+    histogramTopDb: number | null;
+    analyzedAt: string;
+  };
+  audioNormalization?: {
+    method: 'peak' | 'loudnorm';
+    appliedGainDb?: number;
+    outputPath: string;
+    beforeLevel: { meanVolume: number; maxVolume: number };
+    afterLevel: { meanVolume: number; maxVolume: number };
+    normalizedAt: string;
+  };
+  lastTranscriptionError?: {
+    message: string;
+    likelyAudioLevel: boolean;
+    timestamp: string;
   };
 }
 

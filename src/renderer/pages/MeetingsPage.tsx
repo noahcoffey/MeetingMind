@@ -232,11 +232,11 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     }
   }
 
-  async function handleTranscribe() {
+  async function handleTranscribe(opts?: { forceNormalize?: boolean }) {
     if (!selectedMeeting) return;
     setIsTranscribing(true);
-    setTranscriptionStatus('Starting transcription...');
-    const result = await window.meetingMind.startTranscription(selectedMeeting.id);
+    setTranscriptionStatus(opts?.forceNormalize ? 'Normalizing audio, then transcribing...' : 'Starting transcription...');
+    const result = await window.meetingMind.startTranscription(selectedMeeting.id, opts);
     if (!result.success) {
       setIsTranscribing(false);
       setTranscriptionStatus(`Failed: ${result.error}`);
@@ -732,12 +732,34 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                       <span className={`status-badge ${selectedMeeting.status}`} style={{ marginLeft: 8 }}>
                         {getStatusLabel(selectedMeeting.status)}
                       </span>
+                      {selectedMeeting.audioNormalization && (
+                        <span
+                          title={`Audio normalized (${selectedMeeting.audioNormalization.method})${
+                            selectedMeeting.audioNormalization.appliedGainDb != null
+                              ? ` — +${selectedMeeting.audioNormalization.appliedGainDb.toFixed(1)} dB`
+                              : ''
+                          }. Before: mean ${selectedMeeting.audioNormalization.beforeLevel?.meanVolume?.toFixed(1)} dB, max ${selectedMeeting.audioNormalization.beforeLevel?.maxVolume?.toFixed(1)} dB.`}
+                          style={{
+                            marginLeft: 6,
+                            padding: '2px 6px',
+                            borderRadius: 4,
+                            fontSize: 10,
+                            fontWeight: 500,
+                            background: 'var(--accent-blue-tint, rgba(59,130,246,0.15))',
+                            color: 'var(--accent-blue)',
+                            border: '1px solid var(--accent-blue)',
+                            cursor: 'help',
+                          }}
+                        >
+                          Normalized
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   {/* Primary action (pipeline step) */}
                   {selectedMeeting.status === 'recorded' && (
-                    <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handleTranscribe} disabled={isTranscribing}>
+                    <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={() => handleTranscribe()} disabled={isTranscribing}>
                       {isTranscribing ? 'Transcribing...' : 'Transcribe'}
                     </button>
                   )}
@@ -948,8 +970,12 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                 <ErrorCard
                   title="Transcription Failed"
                   error={transcriptionStatus.replace(/^(Error|Failed):\s*/, '')}
-                  onRetry={handleTranscribe}
+                  onRetry={() => handleTranscribe()}
                   onDismiss={() => setTranscriptionStatus('')}
+                  secondaryAction={{
+                    label: 'Normalize Audio & Retry',
+                    onClick: () => { setTranscriptionStatus(''); handleTranscribe({ forceNormalize: true }); },
+                  }}
                 />
               )}
 
@@ -1364,11 +1390,12 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   );
 }
 
-function ErrorCard({ title, error, onRetry, onDismiss }: {
+function ErrorCard({ title, error, onRetry, onDismiss, secondaryAction }: {
   title: string;
   error: string;
   onRetry?: () => void;
   onDismiss?: () => void;
+  secondaryAction?: { label: string; onClick: () => void };
 }) {
   const [expanded, setExpanded] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
@@ -1427,6 +1454,11 @@ function ErrorCard({ title, error, onRetry, onDismiss }: {
         {onRetry && (
           <button className="btn btn-secondary" onClick={onRetry} style={{ fontSize: 12, padding: '4px 12px' }}>
             Retry
+          </button>
+        )}
+        {secondaryAction && (
+          <button className="btn btn-secondary" onClick={secondaryAction.onClick} style={{ fontSize: 12, padding: '4px 12px' }}>
+            {secondaryAction.label}
           </button>
         )}
         <button

@@ -4,6 +4,7 @@ import * as path from 'path';
 import { log } from './logger';
 import { getRecording } from './recording-manager';
 import { getSetting } from './store';
+import { analyzeAudioLevel, isAudioTooQuiet, normalizeAudio, AudioLevel } from './audio-normalizer';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
@@ -272,31 +273,100 @@ async function transcribeWithDeepgram(audioPath: string, recordingDuration: numb
 
 // --- Main entry point ---
 
-export async function startTranscription(recordingId: string): Promise<{ success: boolean; error?: string }> {
+function isLikelyAudioLevelError(err: any): boolean {
+  const msg = (err?.message || String(err)).toLowerCase();
+  return (
+    msg.includes('audio_too_short_or_quiet') ||
+    msg.includes('does not contain') ||
+    msg.includes('no speech') ||
+    msg.includes('detectable speech') ||
+    msg.includes('too quiet') ||
+    msg.includes('silent') ||
+    msg.includes('audio is too')
+  );
+}
+
+async function runTranscription(provider: string, audioPath: string, recordingDuration: number) {
+  switch (provider) {
+    case 'openai-whisper':
+      return transcribeWithWhisper(audioPath, recordingDuration);
+    case 'deepgram':
+      return transcribeWithDeepgram(audioPath, recordingDuration);
+    case 'assemblyai':
+    default:
+      return transcribeWithAssemblyAI(audioPath, recordingDuration);
+  }
+}
+
+export async function startTranscription(
+  recordingId: string,
+  opts: { forceNormalize?: boolean } = {}
+): Promise<{ success: boolean; error?: string; normalized?: boolean }> {
   const recording = getRecording(recordingId);
   if (!recording) return { success: false, error: 'Recording not found' };
 
-  const audioPath = recording.audioPath;
-  if (!fs.existsSync(audioPath)) return { success: false, error: 'Audio file not found' };
+  const originalPath = recording.audioPath;
+  if (!fs.existsSync(originalPath)) return { success: false, error: 'Audio file not found' };
 
   const provider = getSetting('transcriptionProvider') || 'assemblyai';
+  const autoNormalize = getSetting('autoNormalizeQuietAudio');
+  const method = getSetting('normalizationMethod') || 'loudnorm';
+
+  let audioPath = originalPath;
+  let didNormalize = false;
+  let level: AudioLevel | null = null;
 
   try {
     updateRecordingStatus(recordingId, 'transcribing');
 
-    let result: { transcript: any; audioDurationSec: number };
+    // --- Pre-flight: analyze audio level ---
+    try {
+      sendProgress('analyzing', 'Analyzing audio level...');
+      level = await analyzeAudioLevel(originalPath);
+      log('info', 'Audio level analyzed', { recordingId, ...level });
+      saveAudioLevelToManifest(recordingId, level);
+    } catch (err: any) {
+      log('warn', 'Audio level analysis failed; proceeding without it', { error: err.message });
+    }
 
-    switch (provider) {
-      case 'openai-whisper':
-        result = await transcribeWithWhisper(audioPath, recording.duration || 0);
-        break;
-      case 'deepgram':
-        result = await transcribeWithDeepgram(audioPath, recording.duration || 0);
-        break;
-      case 'assemblyai':
-      default:
-        result = await transcribeWithAssemblyAI(audioPath, recording.duration || 0);
-        break;
+    const shouldNormalize = opts.forceNormalize || (autoNormalize && level && isAudioTooQuiet(level));
+    if (shouldNormalize) {
+      sendProgress('normalizing', `Audio is quiet — normalizing (${method})...`);
+      try {
+        const result = await normalizeAudio(originalPath, method, level || undefined);
+        audioPath = result.outputPath;
+        didNormalize = true;
+        log('info', 'Audio normalized for transcription', {
+          recordingId,
+          method: result.method,
+          before: result.beforeLevel,
+          after: result.afterLevel,
+          appliedGainDb: result.appliedGainDb,
+        });
+        saveNormalizationToManifest(recordingId, result);
+      } catch (err: any) {
+        log('warn', 'Normalization failed; falling back to original audio', { error: err.message });
+        sendProgress('processing', 'Normalization failed; trying original audio...');
+      }
+    }
+
+    let result: { transcript: any; audioDurationSec: number };
+    try {
+      result = await runTranscription(provider, audioPath, recording.duration || 0);
+    } catch (err: any) {
+      // Auto-retry once with normalization if the failure looks audio-level related
+      // and we haven't already normalized.
+      if (!didNormalize && autoNormalize && isLikelyAudioLevelError(err)) {
+        log('warn', 'Transcription failed with likely audio-level error; normalizing and retrying', { error: err.message });
+        sendProgress('normalizing', `Audio rejected — normalizing (${method}) and retrying...`);
+        const normResult = await normalizeAudio(originalPath, method, level || undefined);
+        audioPath = normResult.outputPath;
+        didNormalize = true;
+        saveNormalizationToManifest(recordingId, normResult);
+        result = await runTranscription(provider, audioPath, recording.duration || 0);
+      } else {
+        throw err;
+      }
     }
 
     // Save transcript
@@ -320,15 +390,19 @@ export async function startTranscription(recordingId: string): Promise<{ success
     });
 
     updateRecordingStatus(recordingId, 'transcribed');
-    sendProgress('complete', 'Transcription complete!');
-    log('info', 'Transcription completed', { recordingId, provider, estimatedCost: `$${estimatedCost.toFixed(4)}` });
+    sendProgress('complete', didNormalize ? 'Transcription complete (audio was normalized)!' : 'Transcription complete!');
+    log('info', 'Transcription completed', { recordingId, provider, normalized: didNormalize, estimatedCost: `$${estimatedCost.toFixed(4)}` });
 
-    return { success: true };
+    return { success: true, normalized: didNormalize };
   } catch (err: any) {
     log('error', 'Transcription failed', err);
     updateRecordingStatus(recordingId, 'recorded');
     const providerLabel = { 'assemblyai': 'AssemblyAI', 'openai-whisper': 'OpenAI Whisper', 'deepgram': 'Deepgram' }[provider] || provider;
-    const errorMsg = `[${providerLabel}] ${err.message}`;
+    let errorMsg = `[${providerLabel}] ${err.message}`;
+    if (isLikelyAudioLevelError(err) && !didNormalize) {
+      errorMsg += ' — Try "Normalize and retry" to boost the audio level.';
+    }
+    saveTranscriptionError(recordingId, { message: err.message, likelyAudioLevel: isLikelyAudioLevelError(err) });
     sendProgress('error', errorMsg);
     return { success: false, error: errorMsg };
   }
@@ -356,6 +430,40 @@ function saveTranscriptionCost(recordingId: string, cost: {
       log('warn', 'Failed to save transcription cost', { recordingId, error: err.message });
     }
   }
+}
+
+function updateManifest(recordingId: string, mutate: (manifest: any) => void): void {
+  const outputDir = getSetting('recordingOutputFolder') || path.join(require('os').homedir(), 'Documents', 'MeetingMind', 'recordings');
+  const manifestPath = path.join(outputDir, recordingId, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    mutate(manifest);
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  } catch (err: any) {
+    log('warn', 'Failed to update manifest', { recordingId, error: err.message });
+  }
+}
+
+function saveAudioLevelToManifest(recordingId: string, level: AudioLevel): void {
+  updateManifest(recordingId, (m) => { m.audioLevel = { ...level, analyzedAt: new Date().toISOString() }; });
+}
+
+function saveNormalizationToManifest(recordingId: string, result: { method: string; appliedGainDb?: number; outputPath: string; beforeLevel: AudioLevel; afterLevel: AudioLevel }): void {
+  updateManifest(recordingId, (m) => {
+    m.audioNormalization = {
+      method: result.method,
+      appliedGainDb: result.appliedGainDb,
+      outputPath: result.outputPath,
+      beforeLevel: result.beforeLevel,
+      afterLevel: result.afterLevel,
+      normalizedAt: new Date().toISOString(),
+    };
+  });
+}
+
+function saveTranscriptionError(recordingId: string, error: { message: string; likelyAudioLevel: boolean }): void {
+  updateManifest(recordingId, (m) => { m.lastTranscriptionError = { ...error, timestamp: new Date().toISOString() }; });
 }
 
 function updateRecordingStatus(recordingId: string, status: string): void {

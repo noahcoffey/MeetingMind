@@ -31,7 +31,7 @@ const api = {
   deleteRecording: (id: string) => ipcRenderer.invoke('recordings:delete', id),
 
   // Transcription
-  startTranscription: (recordingId: string) => ipcRenderer.invoke('transcription:start', recordingId),
+  startTranscription: (recordingId: string, opts?: { forceNormalize?: boolean }) => ipcRenderer.invoke('transcription:start', recordingId, opts),
   getTranscriptionStatus: (recordingId: string) => ipcRenderer.invoke('transcription:status', recordingId),
 
   // Transcript data

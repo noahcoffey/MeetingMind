@@ -113,6 +113,33 @@ export default function RecordingSettings({
         />
         Show transcription cost in meeting detail
       </label>
+
+      <label className="form-label settings-toggle">
+        <input
+          type="checkbox"
+          checked={settings.autoNormalizeQuietAudio !== false}
+          onChange={e => updateSetting('autoNormalizeQuietAudio', e.target.checked)}
+        />
+        Auto-normalize quiet audio before transcription
+      </label>
+      <div className="form-hint" style={{ marginTop: -4, marginBottom: 12 }}>
+        Detects low-volume recordings and boosts them so the transcription provider can hear speech. Also auto-retries once if a provider rejects the audio as silent.
+      </div>
+      <div className="form-group">
+        <label className="form-label">Normalization Method</label>
+        <select
+          className="form-select"
+          value={settings.normalizationMethod || 'loudnorm'}
+          onChange={e => updateSetting('normalizationMethod', e.target.value)}
+          disabled={settings.autoNormalizeQuietAudio === false}
+        >
+          <option value="loudnorm">Loudnorm EBU R128 (two-pass, broadcast standard)</option>
+          <option value="peak">Peak normalization (fast, single-pass)</option>
+        </select>
+        <div className="form-hint">
+          Loudnorm is slower but produces a more consistent loudness target. Peak normalization just boosts gain so the loudest sample hits -1 dBFS.
+        </div>
+      </div>
     </>
   );
 }
