@@ -3,6 +3,11 @@ import * as path from 'path';
 import * as os from 'os';
 
 jest.mock('electron', () => ({
+  app: {
+    getPath: jest.fn(() => '/tmp/mm-userdata'),
+    getAppPath: jest.fn(() => '/tmp/mm-app'),
+    isPackaged: false,
+  },
   BrowserWindow: {
     getAllWindows: jest.fn(() => []),
   },
@@ -20,12 +25,19 @@ jest.mock('./recording-manager', () => ({
   getRecording: jest.fn(),
 }));
 
+jest.mock('./whisperx-setup', () => ({
+  isWhisperXReady: jest.fn(() => false),
+  getVenvPython: jest.fn(() => '/tmp/mm-userdata/whisperx-env/bin/python'),
+}));
+
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
+import { isWhisperXReady } from './whisperx-setup';
 import { startTranscription, getTranscriptionStatus } from './transcription';
 
 const mockGetSetting = getSetting as jest.MockedFunction<typeof getSetting>;
 const mockGetRecording = getRecording as jest.MockedFunction<typeof getRecording>;
+const mockIsWhisperXReady = isWhisperXReady as jest.MockedFunction<typeof isWhisperXReady>;
 
 describe('startTranscription', () => {
   test('returns error when recording not found', async () => {
@@ -73,6 +85,27 @@ describe('startTranscription', () => {
     expect(result.success).toBe(false);
     // Should fail with API key error for assemblyai
     expect(result.error).toContain('API key');
+
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test('whisperx-local returns a WhisperX-specific error when not set up', async () => {
+    mockGetSetting.mockImplementation((key: string) => {
+      if (key === 'transcriptionProvider') return 'whisperx-local' as any;
+      if (key === 'autoNormalizeQuietAudio') return false as any;
+      return '' as any;
+    });
+    mockIsWhisperXReady.mockReturnValue(false);
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-wx-'));
+    const audioPath = path.join(tempDir, 'audio.m4a');
+    fs.writeFileSync(audioPath, 'fake audio data');
+
+    mockGetRecording.mockReturnValue({ id: 'rec-1', audioPath, duration: 60 });
+
+    const result = await startTranscription('rec-1');
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('WhisperX');
 
     fs.rmSync(tempDir, { recursive: true, force: true });
   });

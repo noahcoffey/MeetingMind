@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Bundled binaries (downloaded at build time via scripts/download-python.sh)
+bin/python-macos-arm64/
+bin/python-macos-x64/
+
 # Build output
 dist/
 

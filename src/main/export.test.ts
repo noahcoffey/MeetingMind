@@ -13,6 +13,8 @@ jest.mock('./recording-manager', () => ({
 // Mock electron modules
 jest.mock('electron', () => ({
   clipboard: {
+    // copyNotesToClipboard writes rich content (plain text + HTML) via write().
+    write: jest.fn(),
     writeText: jest.fn(),
   },
   shell: {
@@ -29,7 +31,7 @@ import { copyNotesToClipboard, emailNotes } from './export';
 import { getRecording } from './recording-manager';
 
 const mockGetRecording = getRecording as jest.MockedFunction<typeof getRecording>;
-const mockWriteText = clipboard.writeText as jest.MockedFunction<typeof clipboard.writeText>;
+const mockWrite = clipboard.write as jest.MockedFunction<typeof clipboard.write>;
 
 describe('copyNotesToClipboard', () => {
   let tempDir: string;
@@ -54,7 +56,8 @@ describe('copyNotesToClipboard', () => {
 
     const result = copyNotesToClipboard('rec-1');
     expect(result.success).toBe(true);
-    expect(mockWriteText).toHaveBeenCalledWith(notesContent);
+    // Rich copy: plain text plus an HTML rendering of the markdown.
+    expect(mockWrite).toHaveBeenCalledWith(expect.objectContaining({ text: notesContent }));
   });
 
   test('returns error when recording not found', () => {

@@ -37,6 +37,10 @@ const api = {
   // Transcript data
   getTranscript: (recordingId: string) => ipcRenderer.invoke('transcription:getTranscript', recordingId),
 
+  // WhisperX local transcription
+  checkWhisperXReady: () => ipcRenderer.invoke('whisperx:checkReady'),
+  setupWhisperX: () => ipcRenderer.invoke('whisperx:setup'),
+
   // Rename recording title
   renameRecording: (recordingId: string, newTitle: string) => ipcRenderer.invoke('recordings:renameTitle', recordingId, newTitle),
   moveToNotebook: (recordingId: string, notebook: string) => ipcRenderer.invoke('recordings:moveToNotebook', recordingId, notebook),
@@ -94,6 +98,7 @@ const api = {
   openInObsidian: (vaultName: string, filePath: string) =>
     ipcRenderer.invoke('file:openInObsidian', vaultName, filePath),
   selectFolder: () => ipcRenderer.invoke('file:selectFolder'),
+  openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   // Meeting Q&A
   askQuestion: (recordingId: string, question: string) => ipcRenderer.invoke('qa:ask', recordingId, question),

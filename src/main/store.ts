@@ -20,7 +20,13 @@ export interface AppSettings {
   obsidianVaultPath: string;
   obsidianSubfolder: string;
   obsidianDailyNotesFolder: string;
-  transcriptionProvider: 'assemblyai' | 'openai-whisper' | 'deepgram';
+  transcriptionProvider: 'assemblyai' | 'openai-whisper' | 'deepgram' | 'whisperx-local';
+  // WhisperX local transcription (runs on-device via bundled Python).
+  // The HuggingFace token for pyannote diarization is NOT stored here — it lives
+  // in the macOS Keychain via keytar under the service name 'huggingface',
+  // consistent with the other API keys ('assemblyai', 'openai', 'deepgram').
+  whisperxModel: 'tiny' | 'base' | 'small' | 'medium' | 'large-v2' | 'large-v3' | 'large-v3-turbo';
+  whisperxLanguage: string; // ISO 639-1 language code, empty string = auto-detect
   notesProvider: 'cli' | 'api';
   claudeModel: string;
   notesPromptTemplate: string;
@@ -54,6 +60,8 @@ const defaults: AppSettings = {
   obsidianSubfolder: 'Meeting Notes',
   obsidianDailyNotesFolder: '',
   transcriptionProvider: 'assemblyai',
+  whisperxModel: 'large-v3-turbo',
+  whisperxLanguage: '',
   notesProvider: 'cli',
   claudeModel: 'claude-sonnet-4-20250514',
   notesPromptTemplate: '',

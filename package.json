@@ -66,6 +66,18 @@
         {
           "from": "bin/ffmpeg",
           "to": "bin/ffmpeg"
+        },
+        {
+          "from": "bin/python-macos-arm64",
+          "to": "bin/python-macos-arm64"
+        },
+        {
+          "from": "bin/python-macos-x64",
+          "to": "bin/python-macos-x64"
+        },
+        {
+          "from": "scripts/transcribe_whisperx.py",
+          "to": "scripts/transcribe_whisperx.py"
         }
       ]
     },

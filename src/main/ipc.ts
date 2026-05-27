@@ -1,6 +1,7 @@
-import { ipcMain, dialog, shell } from 'electron';
+import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
 import { getSetting, setSetting } from './store';
 import { log } from './logger';
+import { isWhisperXReady, installWhisperXDeps } from './whisperx-setup';
 import {
   startRecording,
   stopRecording,
@@ -81,6 +82,10 @@ export function setupIpcHandlers(): void {
     shell.showItemInFolder(filePath);
   });
 
+  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+    shell.openExternal(url);
+  });
+
   ipcMain.handle('file:openInObsidian', async (_event, vaultName: string, filePath: string) => {
     const encodedFile = encodeURIComponent(filePath);
     const encodedVault = encodeURIComponent(vaultName);
@@ -154,6 +159,24 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('transcription:status', async (_event, recordingId: string) => {
     return getTranscriptionStatus(recordingId);
+  });
+
+  // WhisperX local transcription setup
+  ipcMain.handle('whisperx:checkReady', () => ({ ready: isWhisperXReady() }));
+
+  ipcMain.handle('whisperx:setup', async () => {
+    const broadcast = (message: string, pct: number) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('transcription:progress', { status: 'processing', message, progress: pct });
+      }
+    };
+    try {
+      await installWhisperXDeps(broadcast);
+      return { success: true };
+    } catch (err: any) {
+      log('error', 'WhisperX setup failed', err);
+      return { success: false, error: err.message };
+    }
   });
 
   // Notes

@@ -24,6 +24,8 @@ export interface MeetingMindAPI {
   startTranscription: (recordingId: string, opts?: { forceNormalize?: boolean }) => Promise<{ success: boolean; error?: string; normalized?: boolean }>;
   getTranscriptionStatus: (recordingId: string) => Promise<{ status: string; progress?: number }>;
   getTranscript: (recordingId: string) => Promise<TranscriptUtterance[]>;
+  checkWhisperXReady: () => Promise<{ ready: boolean }>;
+  setupWhisperX: () => Promise<{ success: boolean; error?: string }>;
   generateNotes: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
   getNotes: (recordingId: string) => Promise<string | null>;
   saveNotes: (recordingId: string, filename: string) => Promise<{ success: boolean; path?: string; error?: string }>;
@@ -59,6 +61,7 @@ export interface MeetingMindAPI {
   openInFinder: (filePath: string) => Promise<void>;
   openInObsidian: (vaultName: string, filePath: string) => Promise<void>;
   selectFolder: () => Promise<string | null>;
+  openExternal: (url: string) => Promise<void>;
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void;
   removeAllListeners: (channel: string) => void;
 }

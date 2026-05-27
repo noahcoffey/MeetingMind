@@ -29,10 +29,12 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
   const [anthropicKey, setAnthropicKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [deepgramKey, setDeepgramKey] = useState('');
+  const [hfToken, setHfToken] = useState('');
   const [hasAssemblyKey, setHasAssemblyKey] = useState(false);
   const [hasAnthropicKey, setHasAnthropicKey] = useState(false);
   const [hasOpenaiKey, setHasOpenaiKey] = useState(false);
   const [hasDeepgramKey, setHasDeepgramKey] = useState(false);
+  const [hasHfToken, setHasHfToken] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => { loadSettings(); }, []);
@@ -45,6 +47,7 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
       setHasAnthropicKey(!!(await window.meetingMind.getApiKey('anthropic')));
       setHasOpenaiKey(!!(await window.meetingMind.getApiKey('openai')));
       setHasDeepgramKey(!!(await window.meetingMind.getApiKey('deepgram')));
+      setHasHfToken(!!(await window.meetingMind.getApiKey('huggingface')));
     } catch {
       console.error('Failed to load settings');
     }
@@ -58,6 +61,7 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
     if (anthropicKey) { await window.meetingMind.setApiKey('anthropic', anthropicKey); setHasAnthropicKey(true); setAnthropicKey(''); }
     if (openaiKey) { await window.meetingMind.setApiKey('openai', openaiKey); setHasOpenaiKey(true); setOpenaiKey(''); }
     if (deepgramKey) { await window.meetingMind.setApiKey('deepgram', deepgramKey); setHasDeepgramKey(true); setDeepgramKey(''); }
+    if (hfToken) { await window.meetingMind.setApiKey('huggingface', hfToken); setHasHfToken(true); setHfToken(''); }
     onSettingsChange();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -132,6 +136,7 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
                 assemblyAiKey={assemblyAiKey} setAssemblyAiKey={setAssemblyAiKey} hasAssemblyKey={hasAssemblyKey}
                 openaiKey={openaiKey} setOpenaiKey={setOpenaiKey} hasOpenaiKey={hasOpenaiKey}
                 deepgramKey={deepgramKey} setDeepgramKey={setDeepgramKey} hasDeepgramKey={hasDeepgramKey}
+                hfToken={hfToken} setHfToken={setHfToken} hasHfToken={hasHfToken}
               />
             )}
             {section === 'ai-notes' && (

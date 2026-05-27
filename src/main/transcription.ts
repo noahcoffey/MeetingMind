@@ -1,9 +1,12 @@
-import { BrowserWindow } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { log } from './logger';
 import { getRecording } from './recording-manager';
 import { getSetting } from './store';
+import { isWhisperXReady, getVenvPython } from './whisperx-setup';
 import { analyzeAudioLevel, isAudioTooQuiet, normalizeAudio, AudioLevel } from './audio-normalizer';
 
 const MAX_RETRIES = 3;
@@ -17,6 +20,17 @@ async function getApiKey(service: string): Promise<string> {
   const key = await keytar.getPassword('MeetingMind', service);
   if (!key) throw new Error(`${service} API key not configured. Go to Settings to add your API key.`);
   return key;
+}
+
+// Like getApiKey but returns '' instead of throwing when the key is absent.
+// Used for the HuggingFace token, which is optional (no token = single-speaker).
+async function getApiKeyOptional(service: string): Promise<string> {
+  try {
+    const keytar = require('keytar');
+    return (await keytar.getPassword('MeetingMind', service)) || '';
+  } catch {
+    return '';
+  }
 }
 
 // --- Shared helpers ---
@@ -50,6 +64,7 @@ const COST_RATES: Record<string, { perHour: number; label: string }> = {
   'assemblyai': { perHour: 0.17, label: 'AssemblyAI Universal-3-Pro + Speaker Diarization' },
   'openai-whisper': { perHour: 0.36, label: 'OpenAI Whisper ($0.006/min)' },
   'deepgram': { perHour: 0.258, label: 'Deepgram Nova-2 + Diarization' },
+  'whisperx-local': { perHour: 0, label: 'WhisperX Local (free)' },
 };
 
 // --- Provider: AssemblyAI ---
@@ -271,6 +286,111 @@ async function transcribeWithDeepgram(audioPath: string, recordingDuration: numb
   return { transcript, audioDurationSec };
 }
 
+// --- Provider: WhisperX Local (on-device) ---
+
+function getWhisperXRunnerScript(): string {
+  // Packaged: bundled via extraResources; Dev: from the repo's scripts/ dir.
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'scripts', 'transcribe_whisperx.py');
+  }
+  return path.join(app.getAppPath(), 'scripts', 'transcribe_whisperx.py');
+}
+
+async function transcribeWithWhisperX(audioPath: string, recordingDuration: number): Promise<{ transcript: any; audioDurationSec: number }> {
+  if (!isWhisperXReady()) {
+    throw new Error('WhisperX is not set up. Go to Settings → Recording & Transcription and click "Set Up WhisperX".');
+  }
+
+  const venvPython = getVenvPython();
+  const runnerScript = getWhisperXRunnerScript();
+  const model = getSetting('whisperxModel') || 'large-v3-turbo';
+  const language = getSetting('whisperxLanguage') || '';
+  const hfToken = await getApiKeyOptional('huggingface');
+
+  const modelCacheDir = path.join(app.getPath('userData'), 'whisperx-models');
+  fs.mkdirSync(modelCacheDir, { recursive: true });
+
+  const outputPath = path.join(os.tmpdir(), `whisperx-${Date.now()}.json`);
+
+  const cmdArgs = [
+    runnerScript,
+    '--audio', audioPath,
+    '--model', model,
+    '--hf-token', hfToken,
+    '--output', outputPath,
+    '--model-cache-dir', modelCacheDir,
+  ];
+  if (language) cmdArgs.push('--language', language);
+
+  sendProgress('processing', 'Starting on-device transcription...', 5);
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(venvPython, cmdArgs, {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+    });
+
+    let stdoutBuffer = '';
+    let stderrTail = '';
+    let errorMessage: string | null = null;
+
+    proc.stdout?.on('data', (data: Buffer) => {
+      stdoutBuffer += data.toString();
+      // Process complete NDJSON lines; keep any trailing partial line buffered.
+      let nl: number;
+      while ((nl = stdoutBuffer.indexOf('\n')) !== -1) {
+        const line = stdoutBuffer.slice(0, nl).trim();
+        stdoutBuffer = stdoutBuffer.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.type === 'progress') {
+            sendProgress('processing', msg.message || 'Transcribing...', msg.progress);
+          } else if (msg.type === 'error') {
+            errorMessage = msg.message || 'WhisperX error';
+          }
+          // 'done' is handled on close once the file is flushed.
+        } catch {
+          // Non-JSON output — ignore (could be library logging on stdout).
+        }
+      }
+    });
+
+    proc.stderr?.on('data', (data: Buffer) => {
+      stderrTail = (stderrTail + data.toString()).slice(-500);
+    });
+
+    proc.on('error', (err) => reject(new Error(`Failed to start WhisperX: ${err.message}`)));
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        return reject(new Error(errorMessage || `WhisperX exited with code ${code}. ${stderrTail}`.trim()));
+      }
+      if (errorMessage) return reject(new Error(errorMessage));
+
+      try {
+        const raw = fs.readFileSync(outputPath, 'utf-8');
+        const result = JSON.parse(raw);
+        if (!Array.isArray(result.utterances)) {
+          throw new Error('WhisperX output missing utterances');
+        }
+        const audioDurationSec = result.audio_duration || recordingDuration;
+        const transcript: any = {
+          text: result.text || '',
+          audio_duration: audioDurationSec,
+          utterances: result.utterances,
+          provider: 'whisperx-local',
+          model: result.model || model,
+        };
+        try { fs.unlinkSync(outputPath); } catch {}
+        resolve({ transcript, audioDurationSec });
+      } catch (err: any) {
+        reject(new Error(`Failed to read WhisperX output: ${err.message}`));
+      }
+    });
+  });
+}
+
 // --- Main entry point ---
 
 function isLikelyAudioLevelError(err: any): boolean {
@@ -292,6 +412,8 @@ async function runTranscription(provider: string, audioPath: string, recordingDu
       return transcribeWithWhisper(audioPath, recordingDuration);
     case 'deepgram':
       return transcribeWithDeepgram(audioPath, recordingDuration);
+    case 'whisperx-local':
+      return transcribeWithWhisperX(audioPath, recordingDuration);
     case 'assemblyai':
     default:
       return transcribeWithAssemblyAI(audioPath, recordingDuration);
@@ -397,7 +519,7 @@ export async function startTranscription(
   } catch (err: any) {
     log('error', 'Transcription failed', err);
     updateRecordingStatus(recordingId, 'recorded');
-    const providerLabel = { 'assemblyai': 'AssemblyAI', 'openai-whisper': 'OpenAI Whisper', 'deepgram': 'Deepgram' }[provider] || provider;
+    const providerLabel = { 'assemblyai': 'AssemblyAI', 'openai-whisper': 'OpenAI Whisper', 'deepgram': 'Deepgram', 'whisperx-local': 'WhisperX Local' }[provider] || provider;
     let errorMsg = `[${providerLabel}] ${err.message}`;
     if (isLikelyAudioLevelError(err) && !didNormalize) {
       errorMsg += ' — Try "Normalize and retry" to boost the audio level.';
