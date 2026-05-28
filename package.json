@@ -11,8 +11,11 @@
     "build": "npm run build:main && npm run build:renderer",
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "webpack --config webpack.renderer.config.js --mode production",
+    "prep:binaries": "bash scripts/download-python.sh && bash scripts/download-ffmpeg.sh",
     "package": "npm run build && electron-builder",
-    "package:dmg": "npm run build && electron-builder --mac dmg",
+    "package:dmg": "npm run prep:binaries && npm run build && electron-builder --mac dmg",
+    "build:app": "npm run prep:binaries && npm run build && electron-builder --mac dir",
+    "install:app": "npm run build:app && ditto \"release/mac-arm64/MeetingMind.app\" \"/Applications/MeetingMind.app\" && echo \"Installed to /Applications/MeetingMind.app\"",
     "test": "jest",
     "test:watch": "jest --watch",
     "postinstall": "bash scripts/patch-electron-dev.sh"

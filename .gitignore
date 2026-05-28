@@ -1,9 +1,10 @@
 # Dependencies
 node_modules/
 
-# Bundled binaries (downloaded at build time via scripts/download-python.sh)
+# Bundled binaries (downloaded at build time via scripts/download-*.sh)
 bin/python-macos-arm64/
 bin/python-macos-x64/
+bin/ffmpeg
 
 # Build output
 dist/
