@@ -10,7 +10,7 @@ A macOS desktop app for recording meetings, transcribing with AssemblyAI, and ge
 
 - **Audio Recording** — Chunked recording via ffmpeg with pause/resume, cancel & discard, and disk space monitoring
 - **System Audio Capture** — Record both microphone and system audio using virtual audio devices (BlackHole, Loopback)
-- **AI Transcription** — Multi-provider support: AssemblyAI, OpenAI Whisper, or Deepgram (speaker diarization included)
+- **AI Transcription** — Multi-provider support: AssemblyAI, OpenAI Whisper, Deepgram, or **WhisperX Local** — free, on-device transcription with optional speaker diarization (no audio leaves your Mac)
 - **AI Meeting Notes** — Generate structured notes via Claude Code CLI (subscription) or Anthropic API (pay-per-call)
 - **Meeting Q&A** — Ask Claude questions about any meeting with full transcript and notes as context; answers stream live and are saved for future reference
 - **Custom Vocabulary** — Supply names and terms to improve transcription accuracy, with known misspelling variants
@@ -31,7 +31,8 @@ A macOS desktop app for recording meetings, transcribing with AssemblyAI, and ge
 
 - **Electron** + **React** + **TypeScript**
 - **ffmpeg** (avfoundation) for audio capture and processing
-- **AssemblyAI** / **OpenAI Whisper** / **Deepgram** for transcription
+- **AssemblyAI** / **OpenAI Whisper** / **Deepgram** for cloud transcription
+- **WhisperX** + **pyannote.audio** for free on-device transcription & diarization, run via a bundled Python interpreter
 - **Claude AI** for notes generation and auto-tagging
 - **electron-store** for settings persistence
 - **keytar** for secure API key storage in macOS Keychain
@@ -67,6 +68,11 @@ npm test
 
 # Watch mode
 npm run test:watch
+
+# Download the bundled Python interpreter (required for WhisperX Local)
+# Run before packaging; fetches CPython into bin/ (gitignored). Use `all` for a universal build.
+bash scripts/download-python.sh        # host arch only
+bash scripts/download-python.sh all    # both arm64 + x64
 
 # Package as .dmg
 npm run package:dmg
@@ -116,6 +122,30 @@ src/
     └── hooks/
         └── useAudioPlayer.ts   # Shared audio playback hook
 ```
+
+## WhisperX Local Transcription
+
+WhisperX Local runs transcription entirely on your Mac — free, with no audio ever leaving the device. It's a fourth option alongside the cloud providers (AssemblyAI, OpenAI Whisper, Deepgram).
+
+### One-time setup
+
+1. Open **Settings → Recording & Transcription** and set **Transcription Provider** to **WhisperX Local — Free (runs on-device)**.
+2. Click **Set Up WhisperX**. On first run this creates an isolated Python environment under `~/Library/Application Support/MeetingMind/whisperx-env/` and installs WhisperX, PyTorch, and pyannote (a few hundred MB — it can take several minutes). When it finishes, the button shows **Ready ✓**. No Python install or terminal required — the app uses a bundled interpreter.
+3. Pick a **Model Size** (default `large-v3-turbo` — a good speed/accuracy balance).
+
+That's enough to transcribe. The first transcription downloads the chosen model's weights (cached afterward), so the first run is slower than later ones.
+
+### Enabling speaker diarization (who said what)
+
+Diarization is optional and requires a free HuggingFace token:
+
+1. Create a free account at [huggingface.co](https://huggingface.co) and generate a **read** token under *Settings → Access Tokens*.
+2. Accept the model license for [**pyannote/speaker-diarization-community-1**](https://hf.co/pyannote/speaker-diarization-community-1) using the same account (click *Agree and access repository*). This is the pipeline WhisperX loads; it may take a few minutes for access to be granted.
+3. Paste the token into the **HuggingFace Token** field in Settings and click **Save Settings**.
+
+Without a token, transcripts still work but all speech is labeled a single speaker. Already transcribed a recording before enabling diarization? Use **Re-transcribe** in the recording's gear (⚙️) menu to re-run it.
+
+> **Note:** Transcription runs on CPU (Apple's MPS/GPU isn't supported by the underlying CTranslate2 engine), so longer meetings take a while — especially with diarization enabled.
 
 ## Notes Provider
 
