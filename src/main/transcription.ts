@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { log } from './logger';
-import { getRecording } from './recording-manager';
+import { getRecording, getFFmpegPath } from './recording-manager';
 import { getSetting } from './store';
 import { isWhisperXReady, getVenvPython } from './whisperx-setup';
 import { analyzeAudioLevel, isAudioTooQuiet, normalizeAudio, AudioLevel } from './audio-normalizer';
@@ -324,10 +324,16 @@ async function transcribeWithWhisperX(audioPath: string, recordingDuration: numb
 
   sendProgress('processing', 'Starting on-device transcription...', 5);
 
+  // whisperx.load_audio() shells out to `ffmpeg` and only finds it via $PATH.
+  // A packaged app's PATH doesn't include the bundled ffmpeg dir — and may not
+  // include Homebrew either — so prepend it here.
+  const ffmpegDir = path.dirname(getFFmpegPath());
+  const childPath = `${ffmpegDir}${path.delimiter}${process.env.PATH || ''}`;
+
   return new Promise((resolve, reject) => {
     const proc = spawn(venvPython, cmdArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      env: { ...process.env, PYTHONUNBUFFERED: '1', PATH: childPath },
     });
 
     let stdoutBuffer = '';
