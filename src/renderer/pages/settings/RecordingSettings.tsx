@@ -193,14 +193,14 @@ export default function RecordingSettings({
               onChange={e => setHfToken(e.target.value)}
             />
             <div className="form-hint">
-              Without a token, all speech is labeled a single speaker.{' '}
+              Without a token, all speech is labeled a single speaker. For diarization you must accept the{' '}
               <a
                 href="#"
-                onClick={(e) => { e.preventDefault(); window.meetingMind.openExternal('https://hf.co/pyannote/speaker-diarization-3.1'); }}
+                onClick={(e) => { e.preventDefault(); window.meetingMind.openExternal('https://hf.co/pyannote/speaker-diarization-community-1'); }}
                 style={{ color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer' }}
               >
-                Accept the model license on HuggingFace
-              </a>{' '}before your token will work for diarization.
+                speaker-diarization-community-1
+              </a>{' '}model license on HuggingFace (the same account as your token).
             </div>
           </div>
 

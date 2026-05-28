@@ -119,13 +119,23 @@ def main():
                     from whisperx.diarize import DiarizationPipeline
                 except Exception:
                     from whisperx import DiarizationPipeline
-                diarize_model = DiarizationPipeline(
-                    use_auth_token=args.hf_token.strip(), device=device
-                )
+                token = args.hf_token.strip()
+                # pyannote.audio >=4 renamed the auth kwarg to `token`; older
+                # versions used `use_auth_token`. Pin the diarization model so it
+                # matches the license the user is asked to accept in Settings.
+                # whisperx 3.8.x / pyannote 4.x use the community-1 pipeline (the
+                # old speaker-diarization-3.1 name now resolves to it anyway).
+                model_name = "pyannote/speaker-diarization-community-1"
+                try:
+                    diarize_model = DiarizationPipeline(model_name=model_name, token=token, device=device)
+                except TypeError:
+                    diarize_model = DiarizationPipeline(model_name=model_name, use_auth_token=token, device=device)
                 diarize_segments = diarize_model(audio)
                 result = whisperx.assign_word_speakers(diarize_segments, result)
                 diarized = True
             except Exception as e:
+                # Surface the failure to the app instead of silently single-speakering.
+                progress("diarizing", f"Speaker diarization unavailable — using single speaker ({e})", 88)
                 sys.stderr.write(f"Diarization failed, falling back to single speaker: {e}\n")
 
         # 5. Build normalized output ------------------------------------------------
