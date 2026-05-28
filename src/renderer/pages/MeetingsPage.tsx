@@ -784,6 +784,18 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                     </button>
                     {showActionsMenu && (
                       <div className="actions-dropdown">
+                        {(selectedMeeting.status === 'transcribed' || selectedMeeting.status === 'complete') && (
+                          <>
+                            <button
+                              className="actions-dropdown-item"
+                              onClick={() => { setShowActionsMenu(false); handleTranscribe(); }}
+                              disabled={isTranscribing}
+                            >
+                              Re-transcribe
+                            </button>
+                            <div className="actions-dropdown-sep" />
+                          </>
+                        )}
                         {selectedMeeting.status === 'complete' && (
                           <>
                             <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSaveNotes(); }}>
