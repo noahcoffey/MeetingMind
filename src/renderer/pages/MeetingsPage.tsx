@@ -175,6 +175,12 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
         const notes = await window.meetingMind.getNotes(updated.id);
         if (notes) setNotesContent(notes);
       }
+      // Reload transcript utterances so a re-transcription's new speaker labels
+      // show up without needing to reselect the meeting.
+      if (updated.status === 'transcribed' || updated.status === 'complete' || updated.status === 'generating') {
+        const transcriptData = await window.meetingMind.getTranscript(updated.id);
+        setUtterances(transcriptData || []);
+      }
       loadMeetings();
       loadAllTags();
     }
