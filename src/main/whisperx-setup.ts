@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { log } from './logger';
 import { getPythonPath } from './whisperx';
 
@@ -39,6 +39,19 @@ export function isWhisperXReady(): boolean {
   return fs.existsSync(getVenvPython()) && fs.existsSync(getReadyMarker());
 }
 
+/** Returns a Python interpreter's "major.minor" (e.g. "3.11"), or null if it can't be run. */
+function getPythonMinorVersion(pythonPath: string): string | null {
+  try {
+    return execFileSync(
+      pythonPath,
+      ['-c', 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'],
+      { encoding: 'utf-8', timeout: 10000 },
+    ).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 function run(
   command: string,
   cmdArgs: string[],
@@ -53,8 +66,13 @@ function run(
       env: { ...process.env, PYTHONUNBUFFERED: '1' },
     });
 
+    // Keep the tail of combined output so a non-zero exit can report *why*
+    // (e.g. pip's "No matching distribution found ..."), not just the code.
+    let outputTail = '';
     const forward = (data: Buffer) => {
-      const line = data.toString().trim();
+      const text = data.toString();
+      outputTail = (outputTail + text).slice(-2000);
+      const line = text.trim();
       if (line) onProgress(`${label}: ${line.split('\n').pop()}`, basePct);
     };
     proc.stdout?.on('data', forward);
@@ -62,8 +80,15 @@ function run(
 
     proc.on('error', (err) => reject(new Error(`${label} failed to start: ${err.message}`)));
     proc.on('close', (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`${label} exited with code ${code}`));
+      if (code === 0) return resolve();
+      // Surface the last few non-empty output lines as error context.
+      const tail = outputTail
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .slice(-3)
+        .join(' | ');
+      reject(new Error(`${label} exited with code ${code}${tail ? `: ${tail}` : ''}`));
     });
   });
 }
@@ -88,6 +113,20 @@ export async function installWhisperXDeps(
 
   const venvDir = getVenvDir();
   const venvPython = getVenvPython();
+
+  // If a venv already exists but was built from a different Python version than
+  // the interpreter we'd use now, it's stale (e.g. an earlier run fell back to a
+  // system Python with no compatible wheels). Rebuild it rather than silently
+  // reusing a broken environment.
+  if (fs.existsSync(venvPython)) {
+    const bundledVer = getPythonMinorVersion(bundledPython);
+    const venvVer = getPythonMinorVersion(venvPython);
+    if (bundledVer && venvVer && bundledVer !== venvVer) {
+      log('warn', 'whisperx-setup: stale venv version mismatch, rebuilding', { venvVer, bundledVer });
+      onProgress(`Rebuilding environment (found Python ${venvVer}, expected ${bundledVer})...`, 3);
+      fs.rmSync(venvDir, { recursive: true, force: true });
+    }
+  }
 
   // 1. Create the virtualenv from the bundled interpreter (skip if it exists).
   if (!fs.existsSync(venvPython)) {

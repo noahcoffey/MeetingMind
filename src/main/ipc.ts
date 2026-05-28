@@ -174,8 +174,9 @@ export function setupIpcHandlers(): void {
       await installWhisperXDeps(broadcast);
       return { success: true };
     } catch (err: any) {
-      log('error', 'WhisperX setup failed', err);
-      return { success: false, error: err.message };
+      // Errors don't JSON-serialize their message, so pass it explicitly.
+      log('error', 'WhisperX setup failed', { error: err?.message || String(err) });
+      return { success: false, error: err?.message || 'WhisperX setup failed' };
     }
   });
 
