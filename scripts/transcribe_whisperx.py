@@ -42,8 +42,9 @@ def progress(status, message, pct):
 
 
 def pick_device_and_compute_type():
-    """WhisperX uses CTranslate2, which does not support Apple MPS. Use CPU with
-    int8 there; use CUDA float16 if an NVIDIA GPU is available (e.g. on Windows)."""
+    """Pick the transcription device. WhisperX transcribes through CTranslate2,
+    which only supports CPU and CUDA (no Apple MPS). Use CUDA float16 if an NVIDIA
+    GPU is available (e.g. on Windows); otherwise CPU with int8."""
     try:
         import torch
         if torch.cuda.is_available():
@@ -51,6 +52,28 @@ def pick_device_and_compute_type():
     except Exception:
         pass
     return "cpu", "int8"
+
+
+def pick_torch_device(transcribe_device):
+    """Device for the PyTorch stages (alignment, diarization). Unlike CTranslate2,
+    these run on plain PyTorch and can use Apple's GPU via MPS. Prefer MPS on Apple
+    Silicon; fall back to whatever the transcription stage uses (cuda/cpu)."""
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            return "mps"
+    except Exception:
+        pass
+    return transcribe_device
+
+
+def cpu_threads():
+    """CTranslate2 thread count. WhisperX defaults to only 4 threads, which leaves
+    most cores idle on an 8-12 core Apple Silicon chip. Use them all."""
+    try:
+        return os.cpu_count() or 4
+    except Exception:
+        return 4
 
 
 def main():
@@ -75,6 +98,7 @@ def main():
         sys.exit(1)
 
     device, compute_type = pick_device_and_compute_type()
+    torch_device = pick_torch_device(device)
     language = args.language.strip() or None
 
     try:
@@ -86,6 +110,7 @@ def main():
             compute_type=compute_type,
             download_root=args.model_cache_dir,
             language=language,
+            threads=cpu_threads(),
         )
 
         # 2. Transcribe -------------------------------------------------------------
@@ -97,46 +122,58 @@ def main():
 
         # 3. Align word timestamps --------------------------------------------------
         progress("aligning", "Aligning word timestamps...", 70)
-        try:
-            align_model, metadata = whisperx.load_align_model(
-                language_code=detected_language, device=device
-            )
-            result = whisperx.align(
-                result["segments"], align_model, metadata, audio, device,
-                return_char_alignments=False,
-            )
-        except Exception as e:
-            # Alignment is a refinement; if it fails, keep the unaligned segments.
-            sys.stderr.write(f"Alignment skipped: {e}\n")
+        # Alignment is plain PyTorch, so it can use Apple's GPU (MPS). If a Metal op
+        # is unsupported, retry on CPU; if even that fails, keep unaligned segments.
+        align_devices = [torch_device] if torch_device == device else [torch_device, device]
+        for align_device in align_devices:
+            try:
+                align_model, metadata = whisperx.load_align_model(
+                    language_code=detected_language, device=align_device
+                )
+                result = whisperx.align(
+                    result["segments"], align_model, metadata, audio, align_device,
+                    return_char_alignments=False,
+                )
+                break
+            except Exception as e:
+                sys.stderr.write(f"Alignment on {align_device} failed: {e}\n")
 
         # 4. Diarize (optional) -----------------------------------------------------
         diarized = False
         if args.hf_token.strip():
+            progress("diarizing", "Running speaker diarization...", 85)
+            # DiarizationPipeline moved across whisperx versions; try both.
             try:
-                progress("diarizing", "Running speaker diarization...", 85)
-                # DiarizationPipeline moved across whisperx versions; try both.
+                from whisperx.diarize import DiarizationPipeline
+            except Exception:
+                from whisperx import DiarizationPipeline
+            token = args.hf_token.strip()
+            # pyannote.audio >=4 renamed the auth kwarg to `token`; older
+            # versions used `use_auth_token`. Pin the diarization model so it
+            # matches the license the user is asked to accept in Settings.
+            # whisperx 3.8.x / pyannote 4.x use the community-1 pipeline (the
+            # old speaker-diarization-3.1 name now resolves to it anyway).
+            model_name = "pyannote/speaker-diarization-community-1"
+            # pyannote is plain PyTorch, so try Apple's GPU (MPS) first, then CPU.
+            diarize_devices = [torch_device] if torch_device == device else [torch_device, device]
+            last_error = None
+            for diarize_device in diarize_devices:
                 try:
-                    from whisperx.diarize import DiarizationPipeline
-                except Exception:
-                    from whisperx import DiarizationPipeline
-                token = args.hf_token.strip()
-                # pyannote.audio >=4 renamed the auth kwarg to `token`; older
-                # versions used `use_auth_token`. Pin the diarization model so it
-                # matches the license the user is asked to accept in Settings.
-                # whisperx 3.8.x / pyannote 4.x use the community-1 pipeline (the
-                # old speaker-diarization-3.1 name now resolves to it anyway).
-                model_name = "pyannote/speaker-diarization-community-1"
-                try:
-                    diarize_model = DiarizationPipeline(model_name=model_name, token=token, device=device)
-                except TypeError:
-                    diarize_model = DiarizationPipeline(model_name=model_name, use_auth_token=token, device=device)
-                diarize_segments = diarize_model(audio)
-                result = whisperx.assign_word_speakers(diarize_segments, result)
-                diarized = True
-            except Exception as e:
+                    try:
+                        diarize_model = DiarizationPipeline(model_name=model_name, token=token, device=diarize_device)
+                    except TypeError:
+                        diarize_model = DiarizationPipeline(model_name=model_name, use_auth_token=token, device=diarize_device)
+                    diarize_segments = diarize_model(audio)
+                    result = whisperx.assign_word_speakers(diarize_segments, result)
+                    diarized = True
+                    break
+                except Exception as e:
+                    last_error = e
+                    sys.stderr.write(f"Diarization on {diarize_device} failed: {e}\n")
+            if not diarized:
                 # Surface the failure to the app instead of silently single-speakering.
-                progress("diarizing", f"Speaker diarization unavailable — using single speaker ({e})", 88)
-                sys.stderr.write(f"Diarization failed, falling back to single speaker: {e}\n")
+                progress("diarizing", f"Speaker diarization unavailable — using single speaker ({last_error})", 88)
+                sys.stderr.write(f"Diarization failed, falling back to single speaker: {last_error}\n")
 
         # 5. Build normalized output ------------------------------------------------
         utterances = []

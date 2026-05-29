@@ -40,5 +40,8 @@ WhisperX Local runs transcription/diarization on-device through Python. To avoid
 **Diarization gotchas (hard-won)**
 - pyannote.audio 4.x renamed the auth kwarg `use_auth_token` → `token`. Passing the wrong one throws and silently falls back to single-speaker.
 - whisperx 3.8.x / pyannote 4.x load `pyannote/speaker-diarization-community-1` (the old `speaker-diarization-3.1` / `segmentation-3.0` names are superseded). The user must accept the **community-1** license on HuggingFace with the account their token belongs to.
-- Runs on CPU only — CTranslate2 doesn't support Apple MPS.
 - Diarization is gated behind a HuggingFace token stored in keytar under service name `huggingface`; empty token = single speaker (graceful fallback, no crash).
+
+**Hardware acceleration (per pipeline stage)**
+- **Transcription** runs through CTranslate2, which only supports CPU and CUDA — *no Apple MPS*. On Apple Silicon it uses CPU + `int8`, but `pick_device_and_compute_type()` returns CUDA float16 when an NVIDIA GPU is present. `cpu_threads()` passes `os.cpu_count()` as `load_model(threads=...)`; WhisperX otherwise defaults to only 4 threads.
+- **Alignment** and **diarization** are plain PyTorch, so they *can* use Apple's GPU. `pick_torch_device()` returns `"mps"` on Apple Silicon (else the transcription device). Both stages try MPS first and retry on CPU if a Metal op is unsupported — alignment then keeps unaligned segments as a last resort, diarization falls back to single-speaker.
