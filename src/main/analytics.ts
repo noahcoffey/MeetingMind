@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { log } from './logger';
 import { getSetting } from './store';
 import { listRecordings } from './recording-manager';
+import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
 
 export interface AnalyticsStats {
   totalRecordings: number;
@@ -197,40 +198,6 @@ export function getAnalyticsStats(): AnalyticsStats {
     .sort((a, b) => b.count - a.count);
 
   return stats;
-}
-
-// Claude helper functions (duplicated from notes-generator.ts patterns)
-function getClaudePath(): string {
-  const candidates = [
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
-    '/usr/local/bin/claude',
-    path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return 'claude';
-}
-
-function getShellEnv(): Record<string, string> {
-  const env = { ...process.env };
-  const extraPaths = [
-    '/usr/local/bin',
-    '/opt/homebrew/bin',
-    path.join(os.homedir(), '.npm-global', 'bin'),
-    path.join(os.homedir(), '.local', 'bin'),
-    path.join(os.homedir(), '.claude', 'local'),
-  ];
-  const currentPath = env.PATH || '';
-  env.PATH = [...extraPaths, currentPath].join(':');
-  return env as Record<string, string>;
-}
-
-async function getAnthropicKey(): Promise<string> {
-  const keytar = require('keytar');
-  const key = await keytar.getPassword('MeetingMind', 'anthropic');
-  if (!key) throw new Error('Anthropic API key not configured');
-  return key;
 }
 
 const TRENDS_PROMPT = 'Based on these recent meeting summaries (titles, dates, durations, and tags), write a brief paragraph (3-5 sentences) analyzing meeting patterns and trends. Note any patterns in frequency, topics, or duration changes.';

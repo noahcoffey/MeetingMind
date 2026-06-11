@@ -6,43 +6,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { log } from './logger';
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
-
-// Resolve the claude CLI binary path
-function getClaudePath(): string {
-  const candidates = [
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
-    '/usr/local/bin/claude',
-    path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-
-  return 'claude';
-}
-
-// Build a shell environment that includes common PATH entries
-function getShellEnv(): Record<string, string> {
-  const env = { ...process.env };
-  const extraPaths = [
-    '/usr/local/bin',
-    '/opt/homebrew/bin',
-    path.join(os.homedir(), '.npm-global', 'bin'),
-    path.join(os.homedir(), '.local', 'bin'),
-    path.join(os.homedir(), '.claude', 'local'),
-  ];
-  const currentPath = env.PATH || '';
-  env.PATH = [...extraPaths, currentPath].join(':');
-  return env as Record<string, string>;
-}
-
-async function getAnthropicKey(): Promise<string> {
-  const keytar = require('keytar');
-  const key = await keytar.getPassword('MeetingMind', 'anthropic');
-  if (!key) throw new Error('Anthropic API key not configured');
-  return key;
-}
+import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
 
 function getOutputDir(): string {
   return getSetting('recordingOutputFolder') || path.join(os.homedir(), 'Documents', 'MeetingMind');

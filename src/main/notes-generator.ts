@@ -8,6 +8,7 @@ import { log } from './logger';
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
 import { autoTagRecording } from './tagger';
+import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
 
 const DEFAULT_PROMPT = `You are a professional meeting notes assistant. Based on the transcript and context below, generate structured meeting notes in Markdown format.
 
@@ -45,13 +46,6 @@ Generate notes with these exact sections:
 
 ## Notes
 (any important verbatim quotes or details worth preserving)`;
-
-async function getAnthropicKey(): Promise<string> {
-  const keytar = require('keytar');
-  const key = await keytar.getPassword('MeetingMind', 'anthropic');
-  if (!key) throw new Error('Anthropic API key not configured. Go to Settings to add your API key.');
-  return key;
-}
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -135,39 +129,6 @@ function sendToRenderer(channel: string, data: unknown): void {
   for (const win of windows) {
     win.webContents.send(channel, data);
   }
-}
-
-// Resolve the claude CLI binary path
-function getClaudePath(): string {
-  // Common install locations
-  const candidates = [
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
-    '/usr/local/bin/claude',
-    path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
-  ];
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-
-  // Fall back to PATH resolution
-  return 'claude';
-}
-
-// Build a shell environment that includes common PATH entries
-// Electron apps don't always inherit the user's full shell PATH
-function getShellEnv(): Record<string, string> {
-  const env = { ...process.env };
-  const extraPaths = [
-    '/usr/local/bin',
-    '/opt/homebrew/bin',
-    path.join(os.homedir(), '.npm-global', 'bin'),
-    path.join(os.homedir(), '.local', 'bin'),
-    path.join(os.homedir(), '.claude', 'local'),
-  ];
-  const currentPath = env.PATH || '';
-  env.PATH = [...extraPaths, currentPath].join(':');
-  return env as Record<string, string>;
 }
 
 // Generate notes via Claude Code CLI (uses subscription, not API credits)

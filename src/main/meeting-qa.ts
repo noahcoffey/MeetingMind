@@ -7,6 +7,7 @@ import { spawn } from 'child_process';
 import { log } from './logger';
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
+import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
 
 export interface QAEntry {
   id: string;
@@ -44,11 +45,37 @@ function saveQuestions(recordingId: string, entries: QAEntry[]): void {
   fs.writeFileSync(qaPath, JSON.stringify(entries, null, 2));
 }
 
+// Keep the prompt comfortably inside the model's context window (and the
+// cost of a single question bounded) — ~150k chars is roughly 40k tokens.
+// A multi-hour meeting transcript can exceed this several times over.
+const MAX_TRANSCRIPT_CHARS = 150_000;
+
+export function truncateTranscript(transcript: string): { text: string; truncated: boolean } {
+  if (transcript.length <= MAX_TRANSCRIPT_CHARS) {
+    return { text: transcript, truncated: false };
+  }
+  // Keep the beginning and end (agenda up front, decisions at the end) and
+  // drop the middle, cutting at line boundaries so utterances stay intact.
+  const half = Math.floor(MAX_TRANSCRIPT_CHARS / 2);
+  let head = transcript.slice(0, half);
+  head = head.slice(0, head.lastIndexOf('\n') + 1 || half);
+  let tail = transcript.slice(-half);
+  tail = tail.slice(tail.indexOf('\n') + 1);
+  return {
+    text: `${head}\n[... middle of the transcript omitted for length ...]\n${tail}`,
+    truncated: true,
+  };
+}
+
 function buildQAPrompt(recording: any, notes: string, transcript: string, question: string): string {
   const userName = getSetting('userName') || 'the user';
+  const { text: boundedTranscript, truncated } = truncateTranscript(transcript);
+  const truncationNote = truncated
+    ? '\n\nNote: the transcript was too long to include in full — its middle section has been omitted. If the answer may depend on the omitted part, say so.'
+    : '';
   return `You are a helpful assistant answering questions about a specific meeting. Use the meeting notes and transcript below to answer the user's question accurately and concisely.
 
-If the answer is not found in the provided context, say so clearly rather than guessing.
+If the answer is not found in the provided context, say so clearly rather than guessing.${truncationNote}
 
 Meeting: ${recording.title || recording.calendarEvent?.title || 'Untitled Meeting'}
 Date: ${new Date(recording.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -58,42 +85,10 @@ Recorded by: ${userName}
 ${notes || '(No notes available)'}
 
 --- TRANSCRIPT ---
-${transcript || '(No transcript available)'}
+${boundedTranscript || '(No transcript available)'}
 
 --- QUESTION ---
 ${question}`;
-}
-
-function getClaudePath(): string {
-  const candidates = [
-    path.join(os.homedir(), '.claude', 'local', 'claude'),
-    '/usr/local/bin/claude',
-    path.join(os.homedir(), '.npm-global', 'bin', 'claude'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
-  return 'claude';
-}
-
-function getShellEnv(): Record<string, string> {
-  const env = { ...process.env };
-  const extraPaths = [
-    '/usr/local/bin',
-    '/opt/homebrew/bin',
-    path.join(os.homedir(), '.npm-global', 'bin'),
-    path.join(os.homedir(), '.local', 'bin'),
-    path.join(os.homedir(), '.claude', 'local'),
-  ];
-  env.PATH = [...extraPaths, env.PATH || ''].join(':');
-  return env as Record<string, string>;
-}
-
-async function getAnthropicKey(): Promise<string> {
-  const keytar = require('keytar');
-  const key = await keytar.getPassword('MeetingMind', 'anthropic');
-  if (!key) throw new Error('Anthropic API key not configured');
-  return key;
 }
 
 async function askViaCLI(prompt: string, qaId: string): Promise<string> {

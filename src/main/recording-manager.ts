@@ -647,25 +647,6 @@ function sendToRenderer(channel: string, data: unknown): void {
   }
 }
 
-// Audio level monitoring using a separate ffmpeg process
-let levelProcess: ChildProcess | null = null;
-
-export function startLevelMonitor(deviceId: string): void {
-  const ffmpegPath = getFFmpegPath();
-
-  const args = [
-    '-f', 'avfoundation',
-    '-i', `:${deviceId === 'default' ? '0' : deviceId}`,
-    '-af', 'volumedetect',
-    '-f', 'null',
-    '-t', '0.1',  // very short capture
-    '-',
-  ];
-
-  // We'll use a simpler approach — the audio level is sent from the renderer
-  // using Web Audio API analyser, since the renderer has access to getUserMedia
-}
-
 // Test system audio device — captures a few seconds via ffmpeg and returns peak level
 export function testSystemAudio(deviceId: string, durationSec: number = 4): Promise<{ success: boolean; peakLevel?: number; error?: string }> {
   const ffmpegPath = getFFmpegPath();
