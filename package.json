@@ -15,7 +15,7 @@
     "package": "npm run build && electron-builder",
     "package:dmg": "npm run prep:binaries && npm run build && electron-builder --mac dmg",
     "build:app": "npm run prep:binaries && npm run build && electron-builder --mac dir",
-    "install:app": "npm run build:app && ditto \"release/mac-arm64/MeetingMind.app\" \"/Applications/MeetingMind.app\" && echo \"Installed to /Applications/MeetingMind.app\"",
+    "install:app": "npm run build:app && APP=\"$(ls -d release/mac*/MeetingMind.app | head -n1)\" && ditto \"$APP\" \"/Applications/MeetingMind.app\" && echo \"Installed to /Applications/MeetingMind.app\"",
     "test": "jest",
     "test:watch": "jest --watch",
     "postinstall": "bash scripts/patch-electron-dev.sh"
@@ -65,6 +65,9 @@
       "minimumSystemVersion": "12.0",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "MeetingMind uses your microphone to record meetings for transcription and note generation."
+      },
       "extraResources": [
         {
           "from": "bin/ffmpeg",

@@ -5,9 +5,8 @@ import { pathToFileURL } from 'url';
 import { setupIpcHandlers } from './ipc';
 import { initializeStore, getSetting } from './store';
 import { initializeLogger, log } from './logger';
-import { checkCrashRecovery } from './recorder';
 import { createTray, destroyTray, updateTray } from './tray';
-import { getRecordingStatus, startRecording, stopRecording, pauseRecording, resumeRecording } from './recording-manager';
+import { getRecordingStatus, startRecording, stopRecording, pauseRecording, resumeRecording, recoverCrashedSessions, isPathInsideRecordingsDir } from './recording-manager';
 
 // Set app name so dock/taskbar shows "MeetingMind" instead of "Electron" in dev
 app.name = 'MeetingMind';
@@ -147,6 +146,13 @@ app.whenReady().then(async () => {
   protocol.handle('media', (request) => {
     const filePath = decodeURIComponent(request.url.replace(/^media:\/\//, ''));
 
+    // Only serve files from the recordings directory — the renderer should
+    // never be able to read arbitrary files through this scheme.
+    if (!isPathInsideRecordingsDir(filePath)) {
+      log('warn', `Blocked media request outside recordings dir: ${filePath}`);
+      return new Response('Forbidden', { status: 403 });
+    }
+
     if (!fs.existsSync(filePath)) {
       log('error', `Media file not found: ${filePath}`);
       return new Response('Not found', { status: 404 });
@@ -166,7 +172,13 @@ app.whenReady().then(async () => {
       const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
       if (match) {
         const start = parseInt(match[1], 10);
-        const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+        const end = Math.min(match[2] ? parseInt(match[2], 10) : fileSize - 1, fileSize - 1);
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= fileSize) {
+          return new Response('Range not satisfiable', {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${fileSize}` },
+          });
+        }
         const chunkSize = end - start + 1;
         const buffer = Buffer.alloc(chunkSize);
         const fd = fs.openSync(filePath, 'r');
@@ -210,13 +222,18 @@ app.whenReady().then(async () => {
   // Register global keyboard shortcuts
   registerGlobalShortcuts();
 
-  // Check for crash recovery
-  const recoverable = await checkCrashRecovery();
-  if (recoverable.length > 0 && mainWindow) {
-    mainWindow.webContents.once('did-finish-load', () => {
-      mainWindow?.webContents.send('crash-recovery', recoverable);
-    });
-  }
+  // Crash recovery: merge any chunks orphaned by a crash into real recordings
+  // so they show up in the library, then let the renderer know.
+  recoverCrashedSessions().then((recoveredIds) => {
+    if (recoveredIds.length > 0 && mainWindow) {
+      const notify = () => mainWindow?.webContents.send('crash-recovery', recoveredIds);
+      if (mainWindow.webContents.isLoading()) {
+        mainWindow.webContents.once('did-finish-load', notify);
+      } else {
+        notify();
+      }
+    }
+  }).catch((err) => log('error', 'Crash recovery failed', err));
 
   app.on('activate', () => {
     if (mainWindow) {

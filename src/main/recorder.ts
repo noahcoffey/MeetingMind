@@ -13,6 +13,7 @@ export interface RecordingManifest {
   title?: string;
   calendarEventId?: string;
   userContext?: string;
+  notebook?: string;
 }
 
 export interface RecoverableSession {

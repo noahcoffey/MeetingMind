@@ -116,21 +116,57 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     window.meetingMind.on('recording:disk-warning', (warning: unknown) => {
       setDiskWarning(warning as string);
     });
+    window.meetingMind.on('recording:error', (payload: unknown) => {
+      const { message, recordingId } = (payload || {}) as { message?: string; recordingId?: string };
+      stopAudioLevelMonitor();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setIsPaused(false);
+      if (recordingId) {
+        // Partial audio was salvaged and saved as a recording
+        setCompletedRecordingId(recordingId);
+        window.meetingMind.getRecording(recordingId).then(rec => {
+          if (rec) setRecordingResult({ duration: rec.duration, fileSize: rec.fileSize });
+        });
+        setStage('complete');
+      } else {
+        setStage('idle');
+        setDuration(0);
+        setChunkCount(0);
+      }
+      setPipelineMessage(message || 'Recording stopped due to an audio capture error.');
+    });
   }
 
   function cleanupListeners() {
     window.meetingMind.removeAllListeners('recording:chunk');
     window.meetingMind.removeAllListeners('recording:paused');
     window.meetingMind.removeAllListeners('recording:disk-warning');
+    window.meetingMind.removeAllListeners('recording:error');
+  }
+
+  // The mic dropdown stores an avfoundation device index — the value ffmpeg actually
+  // records from. The live waveform uses Web Audio getUserMedia, which needs a Web Audio
+  // deviceId, so map the selected avfoundation device to its Web Audio counterpart by name.
+  // If no match is found, fall back to the default mic so the meter still shows something
+  // (the recording itself still uses the correct index).
+  function micAudioConstraint(): MediaStreamConstraints['audio'] {
+    if (selectedDevice === 'default') return true;
+    const av = systemAudioDevices.find((d: any) => String(d.index) === selectedDevice);
+    if (av) {
+      const match = devices.find(
+        d => d.label && (d.label === av.name || d.label.includes(av.name) || av.name.includes(d.label))
+      );
+      if (match?.deviceId) return { deviceId: { exact: match.deviceId } };
+    }
+    return true;
   }
 
   async function startAudioLevelMonitor() {
     try {
-      const constraints: MediaStreamConstraints = {
-        audio: selectedDevice !== 'default'
-          ? { deviceId: { exact: selectedDevice } }
-          : true,
-      };
+      const constraints: MediaStreamConstraints = { audio: micAudioConstraint() };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       audioStreamRef.current = stream;
 
@@ -391,11 +427,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
 
     // Test mic via Web Audio API
     try {
-      const constraints: MediaStreamConstraints = {
-        audio: selectedDevice !== 'default'
-          ? { deviceId: { exact: selectedDevice } }
-          : true,
-      };
+      const constraints: MediaStreamConstraints = { audio: micAudioConstraint() };
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       micTestStreamRef.current = stream;
       const audioCtx = new AudioContext();
@@ -632,12 +664,12 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                     value={selectedDevice}
                     onChange={e => setSelectedDevice(e.target.value)}
                   >
-                    {devices.map(d => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label || `Microphone (${d.deviceId.slice(0, 8)})`}
+                    <option value="default">Default Microphone</option>
+                    {systemAudioDevices.map((d: any) => (
+                      <option key={d.index} value={String(d.index)}>
+                        {d.name}{d.isVirtual ? ' (virtual)' : ''}
                       </option>
                     ))}
-                    {devices.length === 0 && <option value="default">Default Microphone</option>}
                   </select>
                 </div>
 

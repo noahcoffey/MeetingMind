@@ -123,6 +123,7 @@ const api = {
       'recording:timer',
       'recording:paused',
       'recording:disk-warning',
+      'recording:error',
       'transcription:progress',
       'notes:stream',
       'notes:complete',

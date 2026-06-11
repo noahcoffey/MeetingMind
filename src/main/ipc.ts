@@ -13,6 +13,7 @@ import {
   getRecording,
   deleteRecording,
   testSystemAudio,
+  isPathInsideRecordingsDir,
 } from './recording-manager';
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyzeSentiment } from './notes-generator';
@@ -79,6 +80,12 @@ export function setupIpcHandlers(): void {
 
   // File operations
   ipcMain.handle('file:openInFinder', async (_event, filePath: string) => {
+    // Only reveal files inside the recordings directory — don't let the
+    // renderer point Finder at arbitrary paths.
+    if (!isPathInsideRecordingsDir(filePath)) {
+      log('warn', `Blocked openInFinder outside recordings dir: ${filePath}`);
+      return;
+    }
     shell.showItemInFolder(filePath);
   });
 

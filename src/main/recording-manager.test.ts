@@ -23,7 +23,7 @@ jest.mock('./store', () => ({
 }));
 
 import { getSetting } from './store';
-import { listRecordings, getRecording, deleteRecording, getRecordingStatus } from './recording-manager';
+import { listRecordings, getRecording, deleteRecording, getRecordingStatus, isPathInsideRecordingsDir } from './recording-manager';
 
 const mockGetSetting = getSetting as jest.MockedFunction<typeof getSetting>;
 
@@ -121,6 +121,35 @@ describe('recording-manager', () => {
       expect(status.duration).toBe(0);
       expect(status.chunkCount).toBe(0);
       expect(status.isPaused).toBe(false);
+    });
+  });
+
+  describe('isPathInsideRecordingsDir', () => {
+    test('allows files inside the configured output dir', () => {
+      expect(isPathInsideRecordingsDir(path.join(tempDir, 'rec-1', 'audio.m4a'))).toBe(true);
+    });
+
+    test('allows the output dir itself', () => {
+      expect(isPathInsideRecordingsDir(tempDir)).toBe(true);
+    });
+
+    test('rejects paths outside the recordings dirs', () => {
+      expect(isPathInsideRecordingsDir('/etc/passwd')).toBe(false);
+    });
+
+    test('rejects traversal that escapes the output dir', () => {
+      expect(isPathInsideRecordingsDir(path.join(tempDir, '..', 'other', 'file'))).toBe(false);
+      expect(isPathInsideRecordingsDir(path.join(tempDir, 'rec-1', '..', '..', '..', 'etc', 'passwd'))).toBe(false);
+    });
+
+    test('rejects sibling dirs sharing the output dir as a prefix', () => {
+      expect(isPathInsideRecordingsDir(tempDir + '-evil/file')).toBe(false);
+    });
+
+    test('allows the default recordings location even when a custom dir is set', () => {
+      const os = require('os');
+      const defaultDir = path.join(os.homedir(), 'Documents', 'MeetingMind', 'recordings');
+      expect(isPathInsideRecordingsDir(path.join(defaultDir, 'rec-1', 'audio.m4a'))).toBe(true);
     });
   });
 });

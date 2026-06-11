@@ -5,6 +5,8 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import { log } from './logger';
 import { getSetting } from './store';
+import { writeJsonAtomic } from './fs-utils';
+import { checkCrashRecovery, RecoverableSession } from './recorder';
 import { spawn, ChildProcess } from 'child_process';
 
 const CHUNK_DURATION_SEC = 300; // 5 minutes
@@ -60,9 +62,24 @@ export function getFFmpegPath(): string {
   return 'ffmpeg'; // Fall back to system PATH
 }
 
-function getOutputDir(): string {
+export function getOutputDir(): string {
   const customDir = getSetting('recordingOutputFolder');
   return customDir || path.join(os.homedir(), 'Documents', 'MeetingMind', 'recordings');
+}
+
+// True if the (resolved) path lives inside a recordings directory — the
+// configured output folder or the default location. Used to constrain
+// renderer-supplied paths (media:// playback, reveal-in-Finder).
+export function isPathInsideRecordingsDir(filePath: string): boolean {
+  const roots = new Set([
+    path.resolve(getOutputDir()),
+    path.resolve(os.homedir(), 'Documents', 'MeetingMind', 'recordings'),
+  ]);
+  const resolved = path.resolve(filePath);
+  for (const root of roots) {
+    if (resolved === root || resolved.startsWith(root + path.sep)) return true;
+  }
+  return false;
 }
 
 export function startRecording(deviceId: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string): { success: boolean; sessionId?: string; error?: string } {
@@ -180,11 +197,20 @@ function startChunk(): void {
 
     if (code === 0 || code === 255) {
       // Chunk complete (255 = killed, which is normal for stop)
-      if (fs.existsSync(chunkPath) && fs.statSync(chunkPath).size > 0) {
+      const chunkSaved = fs.existsSync(chunkPath) && fs.statSync(chunkPath).size > 0;
+      if (chunkSaved) {
         activeRecording.chunks.push(chunkName);
         sendToRenderer('recording:chunk', activeRecording.chunks.length);
         writeManifest();
         log('info', `Chunk ${chunkName} saved`, { size: fs.statSync(chunkPath).size });
+      }
+
+      // A "successful" chunk that produced no audio means the device isn't
+      // delivering anything — stop instead of silently looping forever.
+      if (code === 0 && !chunkSaved && !activeRecording.isPaused) {
+        activeRecording.ffmpegProcess = null;
+        failRecording('Audio capture produced no data — check that the selected input device is available.');
+        return;
       }
 
       // If we're still recording and this was a natural end (not a stop), start next chunk
@@ -192,14 +218,47 @@ function startChunk(): void {
         activeRecording.chunkIndex++;
         startChunk();
       }
-    } else {
+    } else if (!activeRecording.isPaused) {
+      // Genuine failure mid-recording (bad device, permissions, etc.) —
+      // surface it instead of leaving the UI "recording" silence.
       log('error', `ffmpeg chunk recording failed with code ${code}`);
+      activeRecording.ffmpegProcess = null;
+      failRecording(`Audio capture failed (ffmpeg exit code ${code}).`);
+    } else {
+      log('error', `ffmpeg chunk recording failed with code ${code} (while paused/stopping)`);
     }
   });
 
   proc.on('error', (err) => {
     log('error', 'ffmpeg process error', err);
+    if (activeRecording && activeRecording.ffmpegProcess === proc) {
+      activeRecording.ffmpegProcess = null;
+      failRecording(`Could not start audio capture: ${err.message}`);
+    }
   });
+}
+
+// Recording can no longer continue. Salvage what was captured: merge any
+// completed chunks into a normal recording so the user keeps the audio so far,
+// then tell the renderer why recording ended.
+async function failRecording(message: string): Promise<void> {
+  if (!activeRecording) return;
+  const recording = activeRecording;
+
+  if (recording.chunks.length > 0) {
+    const result = await stopRecording();
+    sendToRenderer('recording:error', {
+      message: `${message} The audio captured so far was saved.`,
+      recordingId: result.recordingId,
+    });
+  } else {
+    if (recording.manifestInterval) clearInterval(recording.manifestInterval);
+    if (recording.diskCheckInterval) clearInterval(recording.diskCheckInterval);
+    releasePowerSaveBlocker();
+    try { fs.rmSync(recording.tempDir, { recursive: true, force: true }); } catch {}
+    activeRecording = null;
+    sendToRenderer('recording:error', { message });
+  }
 }
 
 function writeManifest(): void {
@@ -218,7 +277,11 @@ function writeManifest(): void {
   };
 
   const manifestPath = path.join(activeRecording.tempDir, 'recording-manifest.json');
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  try {
+    writeJsonAtomic(manifestPath, manifest);
+  } catch (err) {
+    log('warn', 'Failed to write recording manifest', err);
+  }
 }
 
 function checkDiskSpace(): void {
@@ -386,10 +449,7 @@ export async function stopRecording(): Promise<{ success: boolean; recordingId?:
       speakerNames: {},
     };
 
-    fs.writeFileSync(
-      path.join(outputDir, 'manifest.json'),
-      JSON.stringify(manifest, null, 2)
-    );
+    writeJsonAtomic(path.join(outputDir, 'manifest.json'), manifest);
 
     // Clean up temp files
     for (const chunk of recording.chunks) {
@@ -468,6 +528,93 @@ async function mergeChunks(tempDir: string, chunks: string[], outputPath: string
     });
     proc.on('error', reject);
   });
+}
+
+// --- Crash recovery ---
+// Salvage chunk files left behind by a crash: validate each chunk, merge the
+// good ones into a normal recording, and clean up the temp session dir.
+
+// Decode-check a chunk with ffmpeg. A chunk that was being written when the
+// app died can be truncated or corrupt; feeding it to the concat merge would
+// fail the whole merge, so corrupt chunks are skipped instead.
+function isChunkDecodable(chunkPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const proc = spawn(getFFmpegPath(), ['-v', 'error', '-i', chunkPath, '-f', 'null', '-']);
+    proc.on('close', (code) => resolve(code === 0));
+    proc.on('error', () => resolve(false));
+  });
+}
+
+export async function recoverCrashedSessions(): Promise<string[]> {
+  const sessions = await checkCrashRecovery();
+  const recovered: string[] = [];
+  for (const session of sessions) {
+    try {
+      const recordingId = await recoverSession(session);
+      if (recordingId) recovered.push(recordingId);
+    } catch (err) {
+      log('error', `Failed to recover session ${session.sessionId}`, err);
+    }
+  }
+  return recovered;
+}
+
+async function recoverSession(session: RecoverableSession): Promise<string | null> {
+  const { manifest, tempDir } = session;
+
+  const validChunks: string[] = [];
+  for (const chunk of manifest.chunks) {
+    if (await isChunkDecodable(path.join(tempDir, chunk))) {
+      validChunks.push(chunk);
+    } else {
+      log('warn', `Skipping corrupt chunk ${chunk} in session ${session.sessionId}`);
+    }
+  }
+
+  if (validChunks.length === 0) {
+    // Nothing decodable — the leftover files are unusable, so clear them out
+    // rather than re-attempting recovery on every launch.
+    log('warn', `Session ${session.sessionId} had no recoverable audio; discarding temp files`);
+    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    return null;
+  }
+
+  const recordingId = crypto.randomUUID();
+  const outputDir = path.join(getOutputDir(), recordingId);
+  fs.mkdirSync(outputDir, { recursive: true });
+  const outputPath = path.join(outputDir, 'audio.m4a');
+
+  try {
+    await mergeChunks(tempDir, validChunks, outputPath);
+    const stats = fs.statSync(outputPath);
+    if (stats.size === 0) throw new Error('Recovered audio file is empty');
+
+    writeJsonAtomic(path.join(outputDir, 'manifest.json'), {
+      id: recordingId,
+      title: manifest.title ? `${manifest.title} (recovered)` : 'Recovered recording',
+      date: manifest.startTime || new Date().toISOString(),
+      duration: manifest.currentDuration || 0,
+      fileSize: stats.size,
+      audioPath: outputPath,
+      status: 'recorded' as const,
+      calendarEventId: manifest.calendarEventId,
+      userContext: manifest.userContext,
+      notebook: manifest.notebook || getSetting('activeNotebook') || 'Personal',
+      speakerNames: {},
+      recovered: true,
+    });
+  } catch (err) {
+    // Keep the temp chunks so a fix or manual merge is still possible.
+    try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch {}
+    throw err;
+  }
+
+  try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+  log('info', `Recovered crashed session ${session.sessionId} as recording ${recordingId}`, {
+    chunks: validChunks.length,
+    skipped: manifest.chunks.length - validChunks.length,
+  });
+  return recordingId;
 }
 
 function getElapsedMs(): number {

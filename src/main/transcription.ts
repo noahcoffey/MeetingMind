@@ -8,10 +8,18 @@ import { getRecording, getFFmpegPath } from './recording-manager';
 import { getSetting } from './store';
 import { isWhisperXReady, getVenvPython } from './whisperx-setup';
 import { analyzeAudioLevel, isAudioTooQuiet, normalizeAudio, AudioLevel } from './audio-normalizer';
+import { writeJsonAtomic } from './fs-utils';
 
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
 const POLL_INTERVAL = 10000;
+const POLL_TIMEOUT_MS = 2 * 60 * 60 * 1000; // give up polling after 2 hours
+
+// Polling gave up but the remote job may still finish — the transcript ID is
+// kept in the manifest so a retry resumes polling instead of re-uploading.
+class PollTimeoutError extends Error {}
+// The remote job ID no longer resolves (expired/unknown) — safe to start fresh.
+class TranscriptNotFoundError extends Error {}
 
 // --- API key helpers ---
 
@@ -69,8 +77,27 @@ const COST_RATES: Record<string, { perHour: number; label: string }> = {
 
 // --- Provider: AssemblyAI ---
 
-async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: number): Promise<{ transcript: any; audioDurationSec: number }> {
+async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: number, recordingId?: string): Promise<{ transcript: any; audioDurationSec: number }> {
   const apiKey = await getApiKey('assemblyai');
+
+  // If a previous attempt submitted this recording but never finished polling
+  // (app quit, network drop, timeout), resume that job instead of paying for
+  // a second upload.
+  const pendingId = recordingId ? getPendingTranscriptId(recordingId) : null;
+  if (pendingId) {
+    log('info', 'Resuming pending AssemblyAI transcript', { recordingId, transcriptId: pendingId });
+    sendProgress('processing', 'Resuming previous transcription job...');
+    try {
+      return await pollAssemblyAI(apiKey, pendingId, recordingDuration, recordingId);
+    } catch (err) {
+      if (err instanceof TranscriptNotFoundError) {
+        log('warn', 'Pending transcript no longer exists; starting a fresh upload', { transcriptId: pendingId });
+        if (recordingId) clearPendingTranscript(recordingId);
+      } else {
+        throw err;
+      }
+    }
+  }
 
   sendProgress('uploading', 'Uploading audio to AssemblyAI...');
 
@@ -117,8 +144,14 @@ async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: nu
 
   const { id: transcriptId } = await transcriptResponse.json() as { id: string };
   log('info', 'Transcription created', { transcriptId });
+  if (recordingId) savePendingTranscript(recordingId, transcriptId);
 
-  // Poll for completion
+  return pollAssemblyAI(apiKey, transcriptId, recordingDuration, recordingId);
+}
+
+async function pollAssemblyAI(apiKey: string, transcriptId: string, recordingDuration: number, recordingId?: string): Promise<{ transcript: any; audioDurationSec: number }> {
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+
   while (true) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL));
 
@@ -127,15 +160,29 @@ async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: nu
       headers: { authorization: apiKey },
     });
 
+    if (statusResponse.status === 404 || statusResponse.status === 400) {
+      throw new TranscriptNotFoundError(`Transcript ${transcriptId} not found (HTTP ${statusResponse.status})`);
+    }
+
     const result = await statusResponse.json() as any;
 
     if (result.status === 'completed') {
+      if (recordingId) clearPendingTranscript(recordingId);
       const audioDurationSec = result.audio_duration || recordingDuration;
       return { transcript: result, audioDurationSec };
     } else if (result.status === 'error') {
+      if (recordingId) clearPendingTranscript(recordingId);
       throw new Error(`Transcription error: ${result.error}`);
     } else {
       sendProgress('processing', `Processing... (${result.status})`);
+    }
+
+    if (Date.now() > deadline) {
+      // Leave the pending transcript ID in the manifest — retrying resumes
+      // polling this job rather than re-uploading.
+      throw new PollTimeoutError(
+        `Transcription did not finish within ${Math.round(POLL_TIMEOUT_MS / 3600000)} hours. The job was saved — retry to check on it without re-uploading.`
+      );
     }
   }
 }
@@ -412,7 +459,7 @@ function isLikelyAudioLevelError(err: any): boolean {
   );
 }
 
-async function runTranscription(provider: string, audioPath: string, recordingDuration: number) {
+async function runTranscription(provider: string, audioPath: string, recordingDuration: number, recordingId?: string) {
   switch (provider) {
     case 'openai-whisper':
       return transcribeWithWhisper(audioPath, recordingDuration);
@@ -422,7 +469,7 @@ async function runTranscription(provider: string, audioPath: string, recordingDu
       return transcribeWithWhisperX(audioPath, recordingDuration);
     case 'assemblyai':
     default:
-      return transcribeWithAssemblyAI(audioPath, recordingDuration);
+      return transcribeWithAssemblyAI(audioPath, recordingDuration, recordingId);
   }
 }
 
@@ -480,7 +527,7 @@ export async function startTranscription(
 
     let result: { transcript: any; audioDurationSec: number };
     try {
-      result = await runTranscription(provider, audioPath, recording.duration || 0);
+      result = await runTranscription(provider, audioPath, recording.duration || 0, recordingId);
     } catch (err: any) {
       // Auto-retry once with normalization if the failure looks audio-level related
       // and we haven't already normalized.
@@ -491,7 +538,7 @@ export async function startTranscription(
         audioPath = normResult.outputPath;
         didNormalize = true;
         saveNormalizationToManifest(recordingId, normResult);
-        result = await runTranscription(provider, audioPath, recording.duration || 0);
+        result = await runTranscription(provider, audioPath, recording.duration || 0, recordingId);
       } else {
         throw err;
       }
@@ -499,10 +546,7 @@ export async function startTranscription(
 
     // Save transcript
     const outputDir = path.dirname(recording.audioPath);
-    fs.writeFileSync(
-      path.join(outputDir, 'transcript.json'),
-      JSON.stringify(result.transcript, null, 2)
-    );
+    writeJsonAtomic(path.join(outputDir, 'transcript.json'), result.transcript);
 
     // Save transcription cost estimate
     const rate = COST_RATES[provider] || COST_RATES['assemblyai'];
@@ -553,7 +597,7 @@ function saveTranscriptionCost(recordingId: string, cost: {
     try {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
       manifest.transcriptionCost = cost;
-      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+      writeJsonAtomic(manifestPath, manifest);
     } catch (err: any) {
       log('warn', 'Failed to save transcription cost', { recordingId, error: err.message });
     }
@@ -567,10 +611,28 @@ function updateManifest(recordingId: string, mutate: (manifest: any) => void): v
   try {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     mutate(manifest);
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    writeJsonAtomic(manifestPath, manifest);
   } catch (err: any) {
     log('warn', 'Failed to update manifest', { recordingId, error: err.message });
   }
+}
+
+// --- Pending transcript tracking (resume across restarts/timeouts) ---
+
+function savePendingTranscript(recordingId: string, transcriptId: string): void {
+  updateManifest(recordingId, (m) => {
+    m.pendingTranscript = { provider: 'assemblyai', transcriptId, createdAt: new Date().toISOString() };
+  });
+}
+
+function getPendingTranscriptId(recordingId: string): string | null {
+  const recording = getRecording(recordingId);
+  const pending = recording?.pendingTranscript;
+  return pending?.provider === 'assemblyai' && pending.transcriptId ? pending.transcriptId : null;
+}
+
+function clearPendingTranscript(recordingId: string): void {
+  updateManifest(recordingId, (m) => { delete m.pendingTranscript; });
 }
 
 function saveAudioLevelToManifest(recordingId: string, level: AudioLevel): void {
@@ -601,7 +663,7 @@ function updateRecordingStatus(recordingId: string, status: string): void {
   if (fs.existsSync(manifestPath)) {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     manifest.status = status;
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    writeJsonAtomic(manifestPath, manifest);
   }
 }
 
