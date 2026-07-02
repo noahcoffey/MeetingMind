@@ -29,8 +29,8 @@ describe('store', () => {
     setSetting('claudeModel', 'claude-haiku-4-5-20251001');
     expect(getSetting('claudeModel')).toBe('claude-haiku-4-5-20251001');
 
-    setSetting('claudeModel', 'claude-sonnet-4-20250514');
-    expect(getSetting('claudeModel')).toBe('claude-sonnet-4-20250514');
+    setSetting('claudeModel', 'claude-sonnet-4-6');
+    expect(getSetting('claudeModel')).toBe('claude-sonnet-4-6');
   });
 
   test('setSetting handles boolean values', () => {

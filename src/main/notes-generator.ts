@@ -9,6 +9,7 @@ import { getSetting } from './store';
 import { getRecording } from './recording-manager';
 import { autoTagRecording } from './tagger';
 import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
+import { sendToMeetingHub } from './meetinghub';
 
 const DEFAULT_PROMPT = `You are a professional meeting notes assistant. Based on the transcript and context below, generate structured meeting notes in Markdown format.
 
@@ -134,7 +135,7 @@ function sendToRenderer(channel: string, data: unknown): void {
 // Generate notes via Claude Code CLI (uses subscription, not API credits)
 async function generateNotesViaCLI(prompt: string): Promise<string> {
   const claudePath = getClaudePath();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-20250514';
+  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
 
   log('info', 'Generating notes via Claude CLI', { claudePath, model });
 
@@ -186,7 +187,7 @@ async function generateNotesViaCLI(prompt: string): Promise<string> {
 // Generate notes via Anthropic API (uses API credits)
 async function generateNotesViaAPI(prompt: string): Promise<string> {
   const apiKey = await getAnthropicKey();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-20250514';
+  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
 
   const client = new Anthropic({ apiKey });
   let fullNotes = '';
@@ -260,6 +261,23 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
     analyzeSentiment(recordingId).catch((err: any) => {
       log('warn', 'Sentiment analysis failed (non-blocking)', { recordingId, error: err.message });
     });
+
+    // Auto-push to MeetingHub if this recording's notebook is enabled for it.
+    const meetinghubNotebooks = getSetting('meetinghubNotebooks') || [];
+    const recNotebook = recording.notebook || getSetting('activeNotebook') || 'Personal';
+    if (meetinghubNotebooks.includes(recNotebook)) {
+      sendToMeetingHub(recordingId)
+        .then(result => {
+          if (result.success) {
+            log('info', 'Auto-pushed notes to MeetingHub', { recordingId, status: result.status });
+          } else {
+            log('warn', 'Auto-push to MeetingHub failed', { recordingId, error: result.error });
+          }
+        })
+        .catch((err: any) => {
+          log('warn', 'Auto-push to MeetingHub error', { recordingId, error: err.message });
+        });
+    }
 
     // Auto-save to Obsidian if enabled
     if (getSetting('autoSaveToObsidian') && getSetting('obsidianVaultPath')) {

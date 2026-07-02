@@ -93,7 +93,7 @@ ${question}`;
 
 async function askViaCLI(prompt: string, qaId: string): Promise<string> {
   const claudePath = getClaudePath();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-20250514';
+  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
 
   return new Promise((resolve, reject) => {
     const proc = spawn(claudePath, ['-p', '--model', model, '--output-format', 'text'], {
@@ -133,7 +133,7 @@ async function askViaCLI(prompt: string, qaId: string): Promise<string> {
 
 async function askViaAPI(prompt: string, qaId: string): Promise<string> {
   const apiKey = await getAnthropicKey();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-20250514';
+  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
   const client = new Anthropic({ apiKey });
   let fullAnswer = '';
 

@@ -94,10 +94,16 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       refreshSelectedMeeting();
     });
 
+    // Listen for MeetingHub push status updates (auto or manual)
+    const unsubMeetingHub = window.meetingMind.on('meetinghub:status', () => {
+      refreshSelectedMeeting();
+    });
+
     return () => {
       unsubProgress();
       unsubNotesComplete();
       unsubSentiment();
+      unsubMeetingHub();
       window.meetingMind.removeAllListeners('notes:stream');
       window.meetingMind.removeAllListeners('qa:stream');
       window.meetingMind.removeAllListeners('qa:complete');
@@ -298,6 +304,18 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     const result = await window.meetingMind.saveToObsidian(selectedMeeting.id, filename);
     if (result.success) showToast('Saved to Obsidian vault!');
     else showToast(`Save failed: ${result.error}`);
+  }
+
+  async function handleSendToMeetingHub() {
+    if (!selectedMeeting) return;
+    showToast('Sending to MeetingHub...');
+    const result = await window.meetingMind.sendToMeetingHub(selectedMeeting.id);
+    if (result.success) {
+      showToast(result.detail || 'Sent to MeetingHub');
+      refreshSelectedMeeting();
+    } else {
+      showToast(`MeetingHub: ${result.error}`);
+    }
   }
 
   async function handleDeleteMeeting() {
@@ -554,7 +572,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       )}
       <div className="page-content" style={{ display: 'flex', gap: 20, height: activeProject && showProjectSummary ? 'calc(100vh - 412px)' : 'calc(100vh - 112px)' }}>
         {/* List */}
-        <div style={{ flex: '0 0 340px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ flex: '0 0 340px', width: 340, maxWidth: 340, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
           {/* Fixed toolbar */}
           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 8px 8px' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -810,6 +828,9 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                             <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSaveToObsidian(); }}>
                               Save to Obsidian
                             </button>
+                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSendToMeetingHub(); }}>
+                              {(selectedMeeting as any).meetinghub?.status === 'sent' ? 'Re-send to MeetingHub' : 'Send to MeetingHub'}
+                            </button>
                             <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleGenerateNotes(); }} disabled={isStreaming}>
                               Regenerate Notes
                             </button>
@@ -950,6 +971,42 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                         }}
                       >
                         {label}
+                      </span>
+                    );
+                  })()}
+                  {(selectedMeeting as any).meetinghub?.status && (() => {
+                    const mh = (selectedMeeting as any).meetinghub;
+                    const colors: Record<string, string> = {
+                      sent: 'var(--accent-green)',
+                      pending: '#e67e22',
+                      skipped: 'var(--text-muted)',
+                      error: '#e74c3c',
+                    };
+                    const labels: Record<string, string> = {
+                      sent: 'MeetingHub ✓',
+                      pending: 'MeetingHub: review',
+                      skipped: 'MeetingHub: skipped',
+                      error: 'MeetingHub: failed',
+                    };
+                    const color = colors[mh.status] || 'var(--text-muted)';
+                    return (
+                      <span
+                        title={mh.detail || ''}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '2px 10px',
+                          borderRadius: 10,
+                          fontSize: 11,
+                          fontWeight: 500,
+                          color,
+                          background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                          border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+                          cursor: 'default',
+                        }}
+                      >
+                        {labels[mh.status] || mh.status}
                       </span>
                     );
                   })()}

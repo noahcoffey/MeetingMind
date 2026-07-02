@@ -50,6 +50,10 @@ export interface AppSettings {
   activeProjectFilter: string | null;
   autoNormalizeQuietAudio: boolean;
   normalizationMethod: 'peak' | 'loudnorm';
+  // MeetingHub note sync. The ingest API key is NOT stored here — it lives in
+  // the macOS Keychain via keytar under service 'MeetingMind', account 'meetinghub'.
+  meetinghubBaseUrl: string;
+  meetinghubNotebooks: string[]; // notebooks for which notes auto-push after generation
 }
 
 const defaults: AppSettings = {
@@ -63,7 +67,7 @@ const defaults: AppSettings = {
   whisperxModel: 'large-v3-turbo',
   whisperxLanguage: '',
   notesProvider: 'cli',
-  claudeModel: 'claude-sonnet-4-20250514',
+  claudeModel: 'claude-sonnet-4-6',
   notesPromptTemplate: '',
   autoTranscribe: false,
   icsCalendarUrl: '',
@@ -85,6 +89,8 @@ const defaults: AppSettings = {
   activeProjectFilter: null,
   autoNormalizeQuietAudio: true,
   normalizationMethod: 'loudnorm',
+  meetinghubBaseUrl: 'https://hub.noahcoffey.com',
+  meetinghubNotebooks: [],
 };
 
 let store: Store<AppSettings>;
@@ -100,6 +106,18 @@ export function initializeStore(): void {
     const os = require('os');
     const path = require('path');
     store.set('recordingOutputFolder', path.join(os.homedir(), 'Documents', 'MeetingMind'));
+  }
+
+  // Migrate retired Claude model IDs to their current equivalents. Older installs
+  // persisted dated Sonnet 4 / Opus 4 IDs that are now deprecated and rejected by
+  // the API and the Claude CLI ("model may not exist or you may not have access").
+  const RETIRED_MODELS: Record<string, string> = {
+    'claude-sonnet-4-20250514': 'claude-sonnet-4-6',
+    'claude-opus-4-20250514': 'claude-opus-4-8',
+  };
+  const currentModel = store.get('claudeModel');
+  if (currentModel && RETIRED_MODELS[currentModel]) {
+    store.set('claudeModel', RETIRED_MODELS[currentModel]);
   }
 }
 

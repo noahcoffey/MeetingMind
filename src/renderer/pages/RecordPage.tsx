@@ -24,6 +24,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
   const [isPaused, setIsPaused] = useState(false);
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const [diskWarning, setDiskWarning] = useState<string | null>(null);
+  const [audioWarning, setAudioWarning] = useState<string | null>(null);
   const [pipelineMessage, setPipelineMessage] = useState('');
   const [completedRecordingId, setCompletedRecordingId] = useState<string | null>(null);
   const [recordingResult, setRecordingResult] = useState<{ duration: number; fileSize: number } | null>(null);
@@ -116,6 +117,9 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     window.meetingMind.on('recording:disk-warning', (warning: unknown) => {
       setDiskWarning(warning as string);
     });
+    window.meetingMind.on('recording:audio-warning', (warning: unknown) => {
+      setAudioWarning(warning as string);
+    });
     window.meetingMind.on('recording:error', (payload: unknown) => {
       const { message, recordingId } = (payload || {}) as { message?: string; recordingId?: string };
       stopAudioLevelMonitor();
@@ -144,23 +148,22 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     window.meetingMind.removeAllListeners('recording:chunk');
     window.meetingMind.removeAllListeners('recording:paused');
     window.meetingMind.removeAllListeners('recording:disk-warning');
+    window.meetingMind.removeAllListeners('recording:audio-warning');
     window.meetingMind.removeAllListeners('recording:error');
   }
 
-  // The mic dropdown stores an avfoundation device index — the value ffmpeg actually
-  // records from. The live waveform uses Web Audio getUserMedia, which needs a Web Audio
-  // deviceId, so map the selected avfoundation device to its Web Audio counterpart by name.
-  // If no match is found, fall back to the default mic so the meter still shows something
-  // (the recording itself still uses the correct index).
+  // The mic dropdown stores an avfoundation device *name* — the stable identifier
+  // ffmpeg records from (indices reshuffle when virtual devices load). The live
+  // waveform uses Web Audio getUserMedia, which needs a Web Audio deviceId, so map
+  // the selected device to its Web Audio counterpart by matching name to label.
+  // If no match is found, fall back to the default mic so the meter still shows
+  // something (the recording itself still uses the correct device name).
   function micAudioConstraint(): MediaStreamConstraints['audio'] {
     if (selectedDevice === 'default') return true;
-    const av = systemAudioDevices.find((d: any) => String(d.index) === selectedDevice);
-    if (av) {
-      const match = devices.find(
-        d => d.label && (d.label === av.name || d.label.includes(av.name) || av.name.includes(d.label))
-      );
-      if (match?.deviceId) return { deviceId: { exact: match.deviceId } };
-    }
+    const match = devices.find(
+      d => d.label && (d.label === selectedDevice || d.label.includes(selectedDevice) || selectedDevice.includes(d.label))
+    );
+    if (match?.deviceId) return { deviceId: { exact: match.deviceId } };
     return true;
   }
 
@@ -328,6 +331,14 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
         setStage('complete');
         setPipelineMessage('Recording saved!');
 
+        // Clear the staged meeting context so the NEXT recording starts clean.
+        // Otherwise a selected calendar event (and its iCal UID) silently carries
+        // over to an unrelated follow-up recording — which mis-attributes it to
+        // the wrong meeting when synced to MeetingHub.
+        setSelectedEvent(null);
+        setMeetingTitle('');
+        setUserContext('');
+
         if (onRecordingSaved) {
           onRecordingSaved(result.recordingId);
         }
@@ -344,6 +355,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
       setRecordingResult(null);
       setPipelineMessage('');
       setDiskWarning(null);
+      setAudioWarning(null);
       pausedDurationRef.current = 0;
       pauseStartRef.current = 0;
 
@@ -354,6 +366,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
         userContext || undefined,
         meetingTitle || undefined,
         activeNotebook || undefined,
+        selectedEvent?.provider,
       );
       if (result.success) {
         startTimeRef.current = Date.now();
@@ -382,6 +395,9 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     setRecordingResult(null);
     setDuration(0);
     setChunkCount(0);
+    setSelectedEvent(null);
+    setMeetingTitle('');
+    setUserContext('');
   }
 
   async function handleDiscardConfirm() {
@@ -400,6 +416,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     setIsPaused(false);
     setPipelineMessage('');
     setDiskWarning(null);
+    setAudioWarning(null);
     pausedDurationRef.current = 0;
     pauseStartRef.current = 0;
   }
@@ -666,7 +683,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                   >
                     <option value="default">Default Microphone</option>
                     {systemAudioDevices.map((d: any) => (
-                      <option key={d.index} value={String(d.index)}>
+                      <option key={d.index} value={d.name}>
                         {d.name}{d.isVirtual ? ' (virtual)' : ''}
                       </option>
                     ))}
@@ -682,7 +699,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                     >
                       <option value="">None — mic only</option>
                       {systemAudioDevices.map(d => (
-                        <option key={d.index} value={String(d.index)}>
+                        <option key={d.index} value={d.name}>
                           {d.name}{d.isVirtual ? ' (virtual)' : ''}
                         </option>
                       ))}
@@ -887,6 +904,12 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                     : 'Low disk space warning — less than 500MB remaining'}
                 </div>
               )}
+
+              {audioWarning && (
+                <div className="disk-warning rp-disk-warning critical">
+                  {audioWarning}
+                </div>
+              )}
             </div>
           )}
 
@@ -921,6 +944,12 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                   {diskWarning === 'critical'
                     ? 'Disk space critically low! Recording paused.'
                     : 'Low disk space warning — less than 500MB remaining'}
+                </div>
+              )}
+
+              {audioWarning && (
+                <div className="disk-warning rp-disk-warning critical">
+                  {audioWarning}
                 </div>
               )}
             </div>

@@ -17,6 +17,7 @@ import {
 } from './recording-manager';
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyzeSentiment } from './notes-generator';
+import { sendToMeetingHub, getMeetingHubActivity, clearMeetingHubActivity } from './meetinghub';
 import { getCalendarEvents, invalidateCalendarCache, connectGoogle, connectMicrosoft, disconnectCalendar } from './calendar';
 import { listSystemAudioDevices } from './system-audio';
 import { copyNotesToClipboard, exportNotesAsPDF, emailNotes } from './export';
@@ -122,8 +123,8 @@ export function setupIpcHandlers(): void {
   });
 
   // Recording handlers
-  ipcMain.handle('recording:start', async (_event, deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string) => {
-    return startRecording(deviceId || 'default', systemAudioDeviceId, calendarEventId, userContext, title, notebook);
+  ipcMain.handle('recording:start', async (_event, deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string) => {
+    return startRecording(deviceId || 'default', systemAudioDeviceId, calendarEventId, userContext, title, notebook, calendarEventProvider);
   });
 
   ipcMain.handle('recording:stop', async () => {
@@ -206,6 +207,19 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('notes:saveObsidian', async (_event, recordingId: string, filename: string) => {
     return saveToObsidian(recordingId, filename);
+  });
+
+  // MeetingHub note sync
+  ipcMain.handle('meetinghub:send', async (_event, recordingId: string) => {
+    return sendToMeetingHub(recordingId, { manual: true });
+  });
+
+  ipcMain.handle('meetinghub:getActivity', async () => {
+    return getMeetingHubActivity();
+  });
+
+  ipcMain.handle('meetinghub:clearActivity', async () => {
+    return clearMeetingHubActivity();
   });
 
   // Calendar

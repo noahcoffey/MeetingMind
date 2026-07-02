@@ -12,6 +12,7 @@ export interface RecordingManifest {
   inputDevice: string;
   title?: string;
   calendarEventId?: string;
+  calendarEventProvider?: string;
   userContext?: string;
   notebook?: string;
 }

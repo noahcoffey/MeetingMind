@@ -164,7 +164,7 @@ Important guidelines:
 
 async function generateViaCLI(prompt: string): Promise<string> {
   const claudePath = getClaudePath();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-20250514';
+  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
 
   log('info', 'Generating weekly highlights via Claude CLI', { claudePath, model });
 
@@ -213,7 +213,7 @@ async function generateViaCLI(prompt: string): Promise<string> {
 
 async function generateViaAPI(prompt: string): Promise<string> {
   const apiKey = await getAnthropicKey();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-20250514';
+  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
 
   const client = new Anthropic({ apiKey });
   let fullOutput = '';

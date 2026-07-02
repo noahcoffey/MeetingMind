@@ -18,7 +18,7 @@ const api = {
   testSystemAudio: (deviceId: string) => ipcRenderer.invoke('audio:testSystem', deviceId),
 
   // Recording
-  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId, calendarEventId, userContext, title, notebook),
+  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId, calendarEventId, userContext, title, notebook, calendarEventProvider),
   stopRecording: () => ipcRenderer.invoke('recording:stop'),
   cancelRecording: () => ipcRenderer.invoke('recording:cancel'),
   pauseRecording: () => ipcRenderer.invoke('recording:pause'),
@@ -51,6 +51,11 @@ const api = {
   updateNotes: (recordingId: string, content: string) => ipcRenderer.invoke('notes:update', recordingId, content),
   saveNotes: (recordingId: string, filename: string) => ipcRenderer.invoke('notes:save', recordingId, filename),
   saveToObsidian: (recordingId: string, filename: string) => ipcRenderer.invoke('notes:saveObsidian', recordingId, filename),
+
+  // MeetingHub note sync
+  sendToMeetingHub: (recordingId: string) => ipcRenderer.invoke('meetinghub:send', recordingId),
+  getMeetingHubActivity: () => ipcRenderer.invoke('meetinghub:getActivity'),
+  clearMeetingHubActivity: () => ipcRenderer.invoke('meetinghub:clearActivity'),
 
   // Calendar
   getCalendarEvents: (bypassCache?: boolean) => ipcRenderer.invoke('calendar:getEvents', bypassCache),
@@ -123,6 +128,7 @@ const api = {
       'recording:timer',
       'recording:paused',
       'recording:disk-warning',
+      'recording:audio-warning',
       'recording:error',
       'transcription:progress',
       'notes:stream',
@@ -137,6 +143,8 @@ const api = {
       'sentiment:complete',
       'project-summary:stream',
       'project-summary:complete',
+      'meetinghub:status',
+      'meetinghub:activity',
     ];
     if (validChannels.includes(channel)) {
       const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args);

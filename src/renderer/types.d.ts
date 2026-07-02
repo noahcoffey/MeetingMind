@@ -12,7 +12,7 @@ export interface MeetingMindAPI {
   deleteApiKey: (service: string) => Promise<boolean>;
   getAudioDevices: () => Promise<MediaDeviceInfo[]>;
   getSystemAudioDevices: () => Promise<AudioDevice[]>;
-  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string) => Promise<{ success: boolean; error?: string }>;
+  startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string) => Promise<{ success: boolean; error?: string }>;
   stopRecording: () => Promise<{ success: boolean; error?: string; recordingId?: string }>;
   cancelRecording: () => Promise<{ success: boolean; error?: string }>;
   pauseRecording: () => Promise<{ success: boolean; error?: string }>;
@@ -30,6 +30,9 @@ export interface MeetingMindAPI {
   getNotes: (recordingId: string) => Promise<string | null>;
   saveNotes: (recordingId: string, filename: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   saveToObsidian: (recordingId: string, filename: string) => Promise<{ success: boolean; error?: string }>;
+  sendToMeetingHub: (recordingId: string) => Promise<{ success: boolean; status?: 'sent' | 'pending' | 'skipped' | 'error'; detail?: string; error?: string }>;
+  getMeetingHubActivity: () => Promise<MeetingHubLogEntry[]>;
+  clearMeetingHubActivity: () => Promise<{ success: boolean }>;
   getCalendarEvents: (bypassCache?: boolean) => Promise<CalendarEvent[]>;
   connectGoogleCalendar: () => Promise<{ success: boolean; error?: string }>;
   connectMicrosoftCalendar: () => Promise<{ success: boolean; error?: string }>;
@@ -75,7 +78,17 @@ export interface Recording {
   audioPath: string;
   status: 'recorded' | 'transcribing' | 'transcribed' | 'generating' | 'complete';
   calendarEvent?: CalendarEvent;
+  calendarEventId?: string;
+  calendarEventProvider?: 'google' | 'microsoft' | 'ics';
   userContext?: string;
+  meetinghub?: {
+    status: 'sent' | 'pending' | 'skipped' | 'error';
+    at: string;
+    detail?: string;
+    sourceId?: string;
+    meetingId?: string;
+    pendingId?: string;
+  };
   speakerNames?: Record<string, string>;
   tags?: string[];
   notebook?: string;
@@ -112,6 +125,22 @@ export interface Recording {
     likelyAudioLevel: boolean;
     timestamp: string;
   };
+}
+
+export interface MeetingHubLogEntry {
+  id: string;
+  at: string;
+  trigger: 'auto' | 'manual';
+  recordingId: string;
+  recordingTitle: string;
+  outcome: 'sent' | 'pending' | 'skipped' | 'error';
+  sourceId?: string;
+  endpoint?: string;
+  httpStatus: number | null;
+  notesChars?: number;
+  detail?: string;
+  request?: { method: string; url: string; body: Record<string, unknown> };
+  response?: { status: number; statusText?: string; body: unknown };
 }
 
 export interface CalendarEvent {

@@ -29,7 +29,9 @@ interface ActiveRecording {
   isPaused: boolean;
   pausedAt: number;          // timestamp when paused, 0 if not paused
   totalPausedMs: number;     // accumulated paused milliseconds
+  silenceWarned: boolean;    // true once we've warned the user the capture is silent
   calendarEventId?: string;
+  calendarEventProvider?: string;
   userContext?: string;
   title?: string;
   notebook?: string;
@@ -82,7 +84,7 @@ export function isPathInsideRecordingsDir(filePath: string): boolean {
   return false;
 }
 
-export function startRecording(deviceId: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string): { success: boolean; sessionId?: string; error?: string } {
+export function startRecording(deviceId: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string): { success: boolean; sessionId?: string; error?: string } {
   if (activeRecording) {
     return { success: false, error: 'Recording already in progress' };
   }
@@ -105,7 +107,9 @@ export function startRecording(deviceId: string, systemAudioDeviceId?: string, c
     isPaused: false,
     pausedAt: 0,
     totalPausedMs: 0,
+    silenceWarned: false,
     calendarEventId,
+    calendarEventProvider,
     userContext,
     title,
     notebook,
@@ -144,9 +148,13 @@ function startChunk(): void {
   const chunkPath = path.join(activeRecording.tempDir, chunkName);
   const ffmpegPath = getFFmpegPath();
 
-  // Build ffmpeg command to record from input device
-  // On macOS, use avfoundation to capture audio
-  const micDeviceId = activeRecording.inputDevice === 'default' ? '0' : activeRecording.inputDevice;
+  // Build ffmpeg command to record from input device.
+  // On macOS, use avfoundation to capture audio — addressed by device *name*,
+  // not numeric index. avfoundation indices are NOT stable: a virtual device
+  // (e.g. ZoomAudioDevice) can take index 0 and silently hijack what used to be
+  // the mic, so "record from index 0" would capture an hour of digital silence.
+  // ":default" lets avfoundation resolve the true OS default input device.
+  const micDeviceId = activeRecording.inputDevice === 'default' ? 'default' : activeRecording.inputDevice;
   const systemDeviceId = activeRecording.systemAudioDevice;
 
   let args: string[];
@@ -203,6 +211,10 @@ function startChunk(): void {
         sendToRenderer('recording:chunk', activeRecording.chunks.length);
         writeManifest();
         log('info', `Chunk ${chunkName} saved`, { size: fs.statSync(chunkPath).size });
+        // A chunk can be a valid file full of digital silence (the device is
+        // delivering zeros, e.g. a virtual/muted input). The "no data" guard
+        // below won't catch that, so measure the level and warn the user.
+        checkChunkForSilence(path.join(activeRecording.tempDir, chunkName));
       }
 
       // A "successful" chunk that produced no audio means the device isn't
@@ -272,6 +284,7 @@ function writeManifest(): void {
     inputDevice: activeRecording.inputDevice,
     title: activeRecording.title,
     calendarEventId: activeRecording.calendarEventId,
+    calendarEventProvider: activeRecording.calendarEventProvider,
     userContext: activeRecording.userContext,
     notebook: activeRecording.notebook,
   };
@@ -444,6 +457,7 @@ export async function stopRecording(): Promise<{ success: boolean; recordingId?:
       audioPath: outputPath,
       status: 'recorded' as const,
       calendarEventId: recording.calendarEventId,
+      calendarEventProvider: recording.calendarEventProvider,
       userContext: recording.userContext,
       notebook: recording.notebook || getSetting('activeNotebook') || 'Personal',
       speakerNames: {},
@@ -598,6 +612,7 @@ async function recoverSession(session: RecoverableSession): Promise<string | nul
       audioPath: outputPath,
       status: 'recorded' as const,
       calendarEventId: manifest.calendarEventId,
+      calendarEventProvider: manifest.calendarEventProvider,
       userContext: manifest.userContext,
       notebook: manifest.notebook || getSetting('activeNotebook') || 'Personal',
       speakerNames: {},
@@ -647,10 +662,48 @@ function sendToRenderer(channel: string, data: unknown): void {
   }
 }
 
+// A real microphone always has a noise floor (~-60 dB here). A device that is
+// delivering nothing — wrong/virtual input, or muted hardware — reads as pure
+// digital silence (~-91 dB). Anything at or below this threshold means "no
+// signal", not merely "quiet room", so it's safe to warn without false alarms.
+const SILENCE_DB_THRESHOLD = -85;
+
+// Measure a finished chunk's mean volume and, the first time a recording looks
+// silent, warn the renderer. Runs async/non-blocking; never interrupts capture.
+function checkChunkForSilence(chunkPath: string): void {
+  if (!activeRecording || activeRecording.silenceWarned) return;
+  const sessionId = activeRecording.sessionId;
+
+  let stderr = '';
+  const proc = spawn(getFFmpegPath(), ['-v', 'error', '-i', chunkPath, '-af', 'volumedetect', '-f', 'null', '-'], {
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+  proc.on('error', (err) => log('warn', 'Silence check failed to run', err));
+  proc.on('close', () => {
+    // Recording may have stopped or already been warned while we measured.
+    if (!activeRecording || activeRecording.sessionId !== sessionId || activeRecording.silenceWarned) return;
+    const match = stderr.match(/mean_volume:\s*([-\d.]+)\s*dB/);
+    if (!match) return;
+    const meanDb = parseFloat(match[1]);
+    if (meanDb <= SILENCE_DB_THRESHOLD) {
+      activeRecording.silenceWarned = true;
+      const device = activeRecording.inputDevice === 'default' ? 'the default microphone' : `"${activeRecording.inputDevice}"`;
+      log('warn', 'Silent audio detected during recording', { meanDb, device: activeRecording.inputDevice });
+      sendToRenderer(
+        'recording:audio-warning',
+        `No audio is being captured from ${device}. The recording so far is silent — check that the right input device is selected and not muted.`,
+      );
+    }
+  });
+}
+
 // Test system audio device — captures a few seconds via ffmpeg and returns peak level
 export function testSystemAudio(deviceId: string, durationSec: number = 4): Promise<{ success: boolean; peakLevel?: number; error?: string }> {
   const ffmpegPath = getFFmpegPath();
-  const devId = deviceId === 'default' ? '0' : deviceId;
+  // Address the device by name; ":default" resolves the true OS default input.
+  // (avfoundation indices are unstable — see startChunk for the full rationale.)
+  const devId = deviceId === 'default' ? 'default' : deviceId;
 
   return new Promise((resolve) => {
     // Use volumedetect filter to measure audio levels
