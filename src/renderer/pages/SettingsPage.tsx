@@ -82,7 +82,12 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
     if (folder) updateSetting(key, folder);
   }
 
-  const currentSection = SECTIONS.find(s => s.key === section)!;
+  // MeetingHub points at a private, self-hosted service — keep it out of the
+  // sidebar until a user opts in, or auto-reveal it if they already have
+  // notebooks configured for it (e.g. settings carried over from an older build).
+  const meetinghubVisible = !!settings.meetinghubEnabled || (settings.meetinghubNotebooks || []).length > 0;
+  const visibleSections = SECTIONS.filter(s => s.key !== 'meetinghub' || meetinghubVisible);
+  const currentSection = visibleSections.find(s => s.key === section) || visibleSections[0];
 
   return (
     <>
@@ -100,7 +105,7 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
           flexDirection: 'column',
           gap: 2,
         }}>
-          {SECTIONS.map(s => (
+          {visibleSections.map(s => (
             <button
               key={s.key}
               onClick={() => setSection(s.key)}

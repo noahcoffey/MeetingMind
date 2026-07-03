@@ -263,6 +263,8 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
     });
 
     // Auto-push to MeetingHub if this recording's notebook is enabled for it.
+    // (meetinghubNotebooks is only ever non-empty once a user has opted a notebook
+    // in via Settings > MeetingHub, which itself is hidden until meetinghubEnabled.)
     const meetinghubNotebooks = getSetting('meetinghubNotebooks') || [];
     const recNotebook = recording.notebook || getSetting('activeNotebook') || 'Personal';
     if (meetinghubNotebooks.includes(recNotebook)) {

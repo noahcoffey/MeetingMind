@@ -124,6 +124,19 @@ export default function GeneralSettings({ settings, updateSetting, onSelectFolde
           </button>
         </div>
       </div>
+      <div className="form-group">
+        <label className="form-label settings-toggle">
+          <input
+            type="checkbox"
+            checked={settings.meetinghubEnabled || false}
+            onChange={e => updateSetting('meetinghubEnabled', e.target.checked)}
+          />
+          Enable MeetingHub sync (advanced)
+        </label>
+        <div className="form-hint">
+          Reveals a MeetingHub settings tab for pushing notes to a self-hosted MeetingHub ingest endpoint.
+        </div>
+      </div>
     </>
   );
 }

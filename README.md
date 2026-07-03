@@ -22,6 +22,7 @@ A macOS desktop app for recording meetings, transcribing with AssemblyAI, and ge
 - **Meeting Analytics** — Dashboard with weekly trends, per-day stats, top tags, and AI-generated trend insights
 - **Calendar Integration** — Google Calendar, Microsoft 365, and ICS feed support for meeting context
 - **Obsidian Integration** — Save notes directly to your Obsidian vault, with per-question Q&A export
+- **Weekly Highlights** — AI-generated digest of the week's meetings on a dedicated page
 - **Themes** — 8 built-in themes (Dark, Ember, Forest, Nord, Ocean, Slate, Violet, Light) plus system auto-detect
 - **Global Hotkeys** — Start/stop recording from anywhere with customizable keyboard shortcuts
 - **Menu Bar Tray** — Quick access controls without switching windows
@@ -63,19 +64,24 @@ The app will guide you through setup on first launch.
 # Build main process + renderer
 npm run build
 
+# Hot-reload dev mode (webpack-dev-server + main process)
+npm run dev
+
 # Run tests
 npm test
 
 # Watch mode
 npm run test:watch
 
-# Download the bundled Python interpreter (required for WhisperX Local)
-# Run before packaging; fetches CPython into bin/ (gitignored). Use `all` for a universal build.
-bash scripts/download-python.sh        # host arch only
-bash scripts/download-python.sh all    # both arm64 + x64
+# Download the bundled Python interpreter + ffmpeg (needed for WhisperX Local / recording)
+# `npm run package:dmg` runs this automatically; run it manually to populate bin/ (gitignored) for local dev
+npm run prep:binaries
 
-# Package as .dmg
+# Package as .dmg (builds + prep:binaries + electron-builder)
 npm run package:dmg
+
+# Build and install straight into /Applications
+npm run install:app
 ```
 
 ## Project Structure
@@ -86,31 +92,39 @@ src/
 │   ├── main.ts              # App entry, window, tray, protocol handler
 │   ├── ipc.ts               # IPC handler registration
 │   ├── preload.ts           # Context bridge API
-│   ├── recording-manager.ts # Chunked audio recording via ffmpeg
-│   ├── transcription.ts     # AssemblyAI upload & polling
+│   ├── recorder.ts          # ffmpeg process lifecycle (start/pause/stop)
+│   ├── recording-manager.ts # Chunked audio recording, manifests & crash recovery
+│   ├── audio-normalizer.ts  # Audio chunk merge & loudness normalization
+│   ├── system-audio.ts      # Virtual audio device detection
+│   ├── transcription.ts     # Multi-provider transcription (AssemblyAI/Whisper/Deepgram)
+│   ├── whisperx.ts          # WhisperX Local transcription runner
+│   ├── whisperx-setup.ts    # WhisperX venv bootstrap & self-heal
+│   ├── claude-cli.ts        # Shared Claude Code CLI / Anthropic API plumbing
 │   ├── notes-generator.ts   # Claude CLI/API notes generation
+│   ├── meeting-qa.ts        # Meeting Q&A with Claude + Obsidian sync
 │   ├── search.ts            # Full-text search engine
 │   ├── analytics.ts         # Meeting statistics & trend analysis
 │   ├── tagger.ts            # AI auto-tagging & manual tags
 │   ├── weekly-highlights.ts # Weekly highlights generation
-│   ├── meeting-qa.ts        # Meeting Q&A with Claude + Obsidian sync
 │   ├── export.ts            # Clipboard, PDF, email export
 │   ├── calendar.ts          # Google, Microsoft, ICS calendar
-│   ├── system-audio.ts      # Virtual audio device detection
+│   ├── project-manager.ts   # Project/notebook grouping
 │   ├── tray.ts              # Menu bar tray & context menu
 │   ├── store.ts             # Settings persistence
 │   └── logger.ts            # File logging
 └── renderer/                # React frontend
     ├── App.tsx              # Root layout with sidebar navigation
     ├── pages/
+    │   ├── OnboardingFlow.tsx  # First-launch setup wizard
     │   ├── RecordPage.tsx       # Recording UI with device picker
     │   ├── MeetingsPage.tsx      # Library list + detail panel + Q&A
     │   ├── AnalyticsPage.tsx    # Stats dashboard
     │   ├── HighlightsPage.tsx   # Weekly highlights
     │   ├── SettingsPage.tsx     # Settings shell with sub-pages
-    │   └── settings/            # Settings sub-pages (General, Recording, AI, Vocabulary, Calendar, Obsidian)
+    │   └── settings/            # General, Recording, AI Notes, Vocabulary, Calendar, Obsidian
     ├── components/
     │   ├── AudioPlayer.tsx      # Playback controls
+    │   ├── AudioMeter.tsx       # Live input level meter
     │   ├── TranscriptViewer.tsx # Speaker-colored transcript
     │   ├── SearchBar.tsx        # Debounced search with results
     │   ├── TagEditor.tsx        # Tag pills with autocomplete
@@ -145,7 +159,7 @@ Diarization is optional and requires a free HuggingFace token:
 
 Without a token, transcripts still work but all speech is labeled a single speaker. Already transcribed a recording before enabling diarization? Use **Re-transcribe** in the recording's gear (⚙️) menu to re-run it.
 
-> **Note:** Transcription runs on CPU (Apple's MPS/GPU isn't supported by the underlying CTranslate2 engine), so longer meetings take a while — especially with diarization enabled.
+> **Note:** Transcription itself runs on CPU (the underlying CTranslate2 engine has no Apple GPU support), using all available CPU cores. Alignment and diarization are plain PyTorch and run on Apple's GPU (MPS) when available, falling back to CPU automatically for unsupported ops.
 
 ## Notes Provider
 

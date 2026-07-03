@@ -52,6 +52,9 @@ export interface AppSettings {
   normalizationMethod: 'peak' | 'loudnorm';
   // MeetingHub note sync. The ingest API key is NOT stored here — it lives in
   // the macOS Keychain via keytar under service 'MeetingMind', account 'meetinghub'.
+  // Off by default: it points at a private, self-hosted service, so the settings
+  // tab and per-recording actions stay hidden until a user explicitly opts in.
+  meetinghubEnabled: boolean;
   meetinghubBaseUrl: string;
   meetinghubNotebooks: string[]; // notebooks for which notes auto-push after generation
 }
@@ -89,7 +92,8 @@ const defaults: AppSettings = {
   activeProjectFilter: null,
   autoNormalizeQuietAudio: true,
   normalizationMethod: 'loudnorm',
-  meetinghubBaseUrl: 'https://hub.noahcoffey.com',
+  meetinghubEnabled: false,
+  meetinghubBaseUrl: '',
   meetinghubNotebooks: [],
 };
 

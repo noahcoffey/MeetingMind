@@ -43,6 +43,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showCostData, setShowCostData] = useState(false);
+  const [meetinghubVisible, setMeetinghubVisible] = useState(false);
   const [qaEntries, setQaEntries] = useState<QAEntry[]>([]);
   const [qaQuestion, setQaQuestion] = useState('');
   const [qaIsAsking, setQaIsAsking] = useState(false);
@@ -66,7 +67,10 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   useEffect(() => {
     loadMeetings();
     loadAllTags();
-    window.meetingMind.getSettings().then((s: any) => setShowCostData(!!s.showCostData));
+    window.meetingMind.getSettings().then((s: any) => {
+      setShowCostData(!!s.showCostData);
+      setMeetinghubVisible(!!s.meetinghubEnabled || (s.meetinghubNotebooks || []).length > 0);
+    });
 
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
       const { status, message } = data as { status: string; message: string };
@@ -828,9 +832,11 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                             <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSaveToObsidian(); }}>
                               Save to Obsidian
                             </button>
-                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSendToMeetingHub(); }}>
-                              {(selectedMeeting as any).meetinghub?.status === 'sent' ? 'Re-send to MeetingHub' : 'Send to MeetingHub'}
-                            </button>
+                            {meetinghubVisible && (
+                              <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSendToMeetingHub(); }}>
+                                {(selectedMeeting as any).meetinghub?.status === 'sent' ? 'Re-send to MeetingHub' : 'Send to MeetingHub'}
+                              </button>
+                            )}
                             <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleGenerateNotes(); }} disabled={isStreaming}>
                               Regenerate Notes
                             </button>
@@ -974,7 +980,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                       </span>
                     );
                   })()}
-                  {(selectedMeeting as any).meetinghub?.status && (() => {
+                  {meetinghubVisible && (selectedMeeting as any).meetinghub?.status && (() => {
                     const mh = (selectedMeeting as any).meetinghub;
                     const colors: Record<string, string> = {
                       sent: 'var(--accent-green)',

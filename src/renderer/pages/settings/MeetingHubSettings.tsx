@@ -132,7 +132,7 @@ export default function MeetingHubSettings({
         <input
           type="text"
           className="form-input"
-          placeholder="https://hub.noahcoffey.com"
+          placeholder="https://your-meetinghub-instance.example.com"
           value={settings.meetinghubBaseUrl ?? ''}
           onChange={e => updateSetting('meetinghubBaseUrl', e.target.value)}
         />
