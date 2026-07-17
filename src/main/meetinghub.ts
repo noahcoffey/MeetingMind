@@ -222,6 +222,10 @@ export async function sendToMeetingHub(
     // they're harmless to always include and improve the review-inbox display.
     title: recordingTitle,
     startTime: recording.date,
+    // MeetingHub workspace routing: the notebook name maps to a MeetingHub
+    // workspace (matched by name, case-insensitive). Unknown names are
+    // harmless — the push just lands untagged in the review inbox.
+    workspace: recording.notebook || getSetting('activeNotebook') || 'Personal',
   };
   const request: MeetingHubLogEntry['request'] = { method: 'POST', url: endpoint, body };
 
