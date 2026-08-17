@@ -130,6 +130,8 @@ const api = {
       'recording:disk-warning',
       'recording:audio-warning',
       'recording:error',
+      'recording:stopped-externally',
+      'control:navigate-record',
       'transcription:progress',
       'notes:stream',
       'notes:complete',

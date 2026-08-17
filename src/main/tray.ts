@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray } from 'electron';
-import { getRecordingStatus, startRecording, stopRecording, pauseRecording, resumeRecording } from './recording-manager';
+import { getRecordingStatus, startRecording, stopRecordingExternally, pauseRecording, resumeRecording } from './recording-manager';
 import { getSetting } from './store';
 import { log } from './logger';
 
@@ -74,7 +74,7 @@ function buildContextMenu(): Menu {
       label: 'Stop Recording',
       accelerator: 'CmdOrCtrl+Shift+R',
       click: async () => {
-        const result = await stopRecording();
+        const result = await stopRecordingExternally();
         if (result.success) {
           log('info', 'Recording stopped via tray');
           updateTray();

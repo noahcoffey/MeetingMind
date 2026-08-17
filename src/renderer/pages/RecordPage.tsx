@@ -4,11 +4,35 @@ interface RecordPageProps {
   onRecordingComplete?: (recordingId: string) => void;
   onRecordingSaved?: (recordingId: string) => void;
   activeNotebook?: string;
+  /** Bumped when something outside the page asks for the meeting at hand to be
+   *  staged (the control server, driven by the Stream Deck key). */
+  selectNextSignal?: number;
 }
 
 type PipelineStage = 'idle' | 'recording' | 'stopping' | 'merging' | 'complete';
 
-export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook }: RecordPageProps) {
+/** How far ahead a meeting can start and still count as "the one you're about
+ *  to record". Beyond this it is tomorrow's problem, and staging it would be a
+ *  wrong guess rather than a helpful one. */
+const UPCOMING_WINDOW_MS = 30 * 60 * 1000;
+
+/** The meeting happening now, else the next one starting soon. Null if neither
+ *  — better a blank title than the wrong meeting's. */
+function pickCurrentMeeting(events: any[]): any | null {
+  const now = Date.now();
+  const live = events.find(e => {
+    const start = new Date(e.startTime).getTime();
+    return start <= now && new Date(e.endTime).getTime() >= now;
+  });
+  if (live) return live;
+  const soon = events.find(e => {
+    const start = new Date(e.startTime).getTime();
+    return start > now && start - now <= UPCOMING_WINDOW_MS;
+  });
+  return soon || null;
+}
+
+export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook, selectNextSignal }: RecordPageProps) {
   const [stage, setStage] = useState<PipelineStage>('idle');
   const [duration, setDuration] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -37,6 +61,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
   const nextMeetingRef = useRef<HTMLDivElement | null>(null);
+  const externalStopUnsubRef = useRef<null | (() => void)>(null);
   const waveformCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const waveformHistoryRef = useRef<number[]>([]);
   const waveformContainerRef = useRef<HTMLDivElement | null>(null);
@@ -63,6 +88,23 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
       nextMeetingRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
   }, [calendarEvents]);
+
+  // Stage the meeting at hand when asked from outside. The request usually
+  // arrives before the calendar has loaded (the app was just launched), so it
+  // is held until there are events to choose from.
+  const pendingSelectRef = useRef(false);
+  useEffect(() => {
+    if (selectNextSignal) pendingSelectRef.current = true;
+    if (!pendingSelectRef.current) return;
+    // Mid-recording the staged meeting is already committed; leave it alone.
+    if (stage !== 'idle' && stage !== 'complete') return;
+    if (!calendarEvents.length) return;
+    pendingSelectRef.current = false;
+    const meeting = pickCurrentMeeting(calendarEvents);
+    if (!meeting) return;
+    setSelectedEvent(meeting);
+    setMeetingTitle(meeting.title);
+  }, [selectNextSignal, calendarEvents, stage]);
 
   useEffect(() => {
     if (!isRecording) return;
@@ -112,7 +154,37 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
       setChunkCount(count as number);
     });
     window.meetingMind.on('recording:paused', (paused: unknown) => {
-      setIsPaused(paused as boolean);
+      applyPausedState(paused as boolean);
+    });
+    // Stopped from the tray, the hotkey or the Stream Deck key: the page never
+    // ran its own stop, so bring it to the same finished state. App.tsx picks
+    // up the recording itself and runs the pipeline.
+    // Unsubscribed individually, not with removeAllListeners: App.tsx listens on
+    // this channel too, and tearing the channel down would take its pipeline
+    // handoff with it every time this page unmounts.
+    externalStopUnsubRef.current = window.meetingMind.on('recording:stopped-externally', (payload: unknown) => {
+      const result = (payload || {}) as { success?: boolean; recordingId?: string; error?: string };
+      stopAudioLevelMonitor();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setIsPaused(false);
+      pauseStartRef.current = 0;
+      setSelectedEvent(null);
+      setMeetingTitle('');
+      setUserContext('');
+      if (result.success && result.recordingId) {
+        setCompletedRecordingId(result.recordingId);
+        window.meetingMind.getRecording(result.recordingId).then(rec => {
+          if (rec) setRecordingResult({ duration: rec.duration, fileSize: rec.fileSize });
+        });
+        setStage('complete');
+        setPipelineMessage('Recording saved!');
+      } else {
+        setStage('idle');
+        setPipelineMessage(result.error ? `Recording failed: ${result.error}` : '');
+      }
     });
     window.meetingMind.on('recording:disk-warning', (warning: unknown) => {
       setDiskWarning(warning as string);
@@ -150,6 +222,8 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     window.meetingMind.removeAllListeners('recording:disk-warning');
     window.meetingMind.removeAllListeners('recording:audio-warning');
     window.meetingMind.removeAllListeners('recording:error');
+    externalStopUnsubRef.current?.();
+    externalStopUnsubRef.current = null;
   }
 
   // The mic dropdown stores an avfoundation device *name* — the stable identifier
@@ -278,29 +352,39 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     }
   }
 
-  async function handlePauseResume() {
-    if (isPaused) {
-      const result = await window.meetingMind.resumeRecording();
-      if (result.success) {
+  // Pause/resume can now come from the tray, the global hotkey or the Stream
+  // Deck key as well as this page's own button, so the page reacts to the
+  // recorder's own `recording:paused` event rather than to the click. Written
+  // to be idempotent: the click path gets the same event and must not
+  // double-count the paused time.
+  function applyPausedState(paused: boolean) {
+    setIsPaused(paused);
+    if (paused) {
+      if (pauseStartRef.current) return;
+      pauseStartRef.current = Date.now();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      stopAudioLevelMonitor();
+    } else {
+      if (pauseStartRef.current) {
         pausedDurationRef.current += Date.now() - pauseStartRef.current;
         pauseStartRef.current = 0;
+      }
+      if (!timerRef.current) {
         timerRef.current = setInterval(() => {
           const elapsed = Date.now() - startTimeRef.current - pausedDurationRef.current;
           setDuration(Math.floor(elapsed / 1000));
         }, 1000);
-        startAudioLevelMonitor();
       }
-    } else {
-      const result = await window.meetingMind.pauseRecording();
-      if (result.success) {
-        pauseStartRef.current = Date.now();
-        if (timerRef.current) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-        stopAudioLevelMonitor();
-      }
+      startAudioLevelMonitor();
     }
+  }
+
+  async function handlePauseResume() {
+    if (isPaused) await window.meetingMind.resumeRecording();
+    else await window.meetingMind.pauseRecording();
   }
 
   async function handleToggleRecording() {

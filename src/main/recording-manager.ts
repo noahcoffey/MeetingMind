@@ -399,6 +399,18 @@ export async function cancelRecording(): Promise<{ success: boolean; error?: str
   return { success: true };
 }
 
+/**
+ * Stop a recording from outside the Record page — the tray menu, or the control
+ * server. The renderer normally drives the stop itself and hands the finished
+ * recording to the transcription pipeline; a stop from anywhere else has to say
+ * so, or the audio is saved and then nothing happens to it.
+ */
+export async function stopRecordingExternally(): Promise<{ success: boolean; recordingId?: string; error?: string }> {
+  const result = await stopRecording();
+  sendToRenderer('recording:stopped-externally', result);
+  return result;
+}
+
 export async function stopRecording(): Promise<{ success: boolean; recordingId?: string; error?: string }> {
   if (!activeRecording) {
     return { success: false, error: 'No recording in progress' };

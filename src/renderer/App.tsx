@@ -11,6 +11,8 @@ import type { Project } from './types';
 
 type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
+const JOB_AUTO_DISMISS_MS = 60_000;
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('record');
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
@@ -21,7 +23,11 @@ export default function App() {
   const [activeNotebook, setActiveNotebook] = useState<string>('Personal');
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectFilter, setActiveProjectFilter] = useState<string | null>(null);
+  // Bumped by the control server; RecordPage watches it and stages the meeting
+  // happening now. A counter rather than a flag so two requests in a row both land.
+  const [selectNextSignal, setSelectNextSignal] = useState(0);
   const jobCleanupRef = useRef<Map<string, () => void>>(new Map());
+  const jobExpiryRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     loadSettings();
@@ -29,8 +35,30 @@ export default function App() {
       // Clean up all job listeners on unmount
       jobCleanupRef.current.forEach(cleanup => cleanup());
       jobCleanupRef.current.clear();
+      jobExpiryRef.current.forEach(timer => clearTimeout(timer));
+      jobExpiryRef.current.clear();
     };
   }, []);
+
+  // Auto-dismiss finished jobs after a minute. Errors stay until dismissed by hand
+  // so a failed transcription can't scroll away unnoticed.
+  useEffect(() => {
+    for (const job of backgroundJobs) {
+      if (job.stage !== 'complete' || jobExpiryRef.current.has(job.recordingId)) continue;
+      const timer = setTimeout(() => {
+        jobExpiryRef.current.delete(job.recordingId);
+        handleDismissJob(job.recordingId);
+      }, JOB_AUTO_DISMISS_MS);
+      jobExpiryRef.current.set(job.recordingId, timer);
+    }
+    // Drop timers for jobs that are already gone
+    for (const [recordingId, timer] of jobExpiryRef.current) {
+      if (!backgroundJobs.some(j => j.recordingId === recordingId)) {
+        clearTimeout(timer);
+        jobExpiryRef.current.delete(recordingId);
+      }
+    }
+  }, [backgroundJobs]);
 
   async function loadSettings() {
     try {
@@ -156,8 +184,36 @@ export default function App() {
     })();
   }, []);
 
+  // A stop that came from outside the Record page — the tray, the global
+  // hotkey, or the Stream Deck key — still has to hand the finished recording
+  // to the pipeline, and the page has to be told it is no longer recording.
+  useEffect(() => {
+    const unsub = window.meetingMind.on('recording:stopped-externally', (payload: unknown) => {
+      const result = payload as { success: boolean; recordingId?: string };
+      if (result?.success && result.recordingId) handleRecordingSaved(result.recordingId);
+    });
+    return unsub;
+  }, [handleRecordingSaved]);
+
+  // The control server asking for the Record page, optionally with the meeting
+  // that is happening now (or about to) already staged.
+  useEffect(() => {
+    const unsub = window.meetingMind.on('control:navigate-record', (payload: unknown) => {
+      const { selectNext } = (payload || {}) as { selectNext?: boolean };
+      setViewRecordingId(null);
+      setCurrentPage('record');
+      if (selectNext) setSelectNextSignal(n => n + 1);
+    });
+    return unsub;
+  }, []);
+
   function handleDismissJob(recordingId: string) {
     setBackgroundJobs(prev => prev.filter(j => j.recordingId !== recordingId));
+    const expiry = jobExpiryRef.current.get(recordingId);
+    if (expiry) {
+      clearTimeout(expiry);
+      jobExpiryRef.current.delete(recordingId);
+    }
     const cleanup = jobCleanupRef.current.get(recordingId);
     if (cleanup) {
       cleanup();
@@ -268,6 +324,7 @@ export default function App() {
             onRecordingComplete={handleRecordingComplete}
             onRecordingSaved={handleRecordingSaved}
             activeNotebook={activeNotebook}
+            selectNextSignal={selectNextSignal}
           />
         )}
         {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} activeNotebook={activeNotebook} notebooks={notebooks} activeProjectFilter={activeProjectFilter} projects={projects} />}

@@ -6,7 +6,8 @@ import { setupIpcHandlers } from './ipc';
 import { initializeStore, getSetting } from './store';
 import { initializeLogger, log } from './logger';
 import { createTray, destroyTray, updateTray } from './tray';
-import { getRecordingStatus, startRecording, stopRecording, pauseRecording, resumeRecording, recoverCrashedSessions, isPathInsideRecordingsDir } from './recording-manager';
+import { getRecordingStatus, startRecording, stopRecordingExternally, pauseRecording, resumeRecording, recoverCrashedSessions, isPathInsideRecordingsDir } from './recording-manager';
+import { startControlServer, stopControlServer } from './control-server';
 
 // Set app name so dock/taskbar shows "MeetingMind" instead of "Electron" in dev
 app.name = 'MeetingMind';
@@ -73,7 +74,7 @@ function registerGlobalShortcuts(): void {
     const status = getRecordingStatus();
     if (status.recording) {
       log('info', 'Global hotkey: stopping recording');
-      const result = await stopRecording();
+      const result = await stopRecordingExternally();
       if (result.success) {
         updateTray();
         // Show window so user can see the result
@@ -114,10 +115,26 @@ function registerGlobalShortcuts(): void {
 }
 
 function showWindow(): void {
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+  if (!mainWindow) {
+    // The window is closed, not merely hidden (macOS keeps the app alive in the
+    // tray). Rebuild it so "bring MeetingMind forward" always means something.
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  app.focus({ steal: true });
+}
+
+/** Push an event to the renderer once it is ready to receive one. */
+function sendToRenderer(channel: string, data?: unknown): void {
+  if (!mainWindow) return;
+  const win = mainWindow;
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', () => win.webContents.send(channel, data));
+  } else {
+    win.webContents.send(channel, data);
   }
 }
 
@@ -222,6 +239,9 @@ app.whenReady().then(async () => {
   // Register global keyboard shortcuts
   registerGlobalShortcuts();
 
+  // Loopback control channel for local companions (Stream Deck key).
+  startControlServer({ showWindow, sendToRenderer, updateTray });
+
   // Crash recovery: merge any chunks orphaned by a crash into real recordings
   // so they show up in the library, then let the renderer know.
   recoverCrashedSessions().then((recoveredIds) => {
@@ -256,4 +276,5 @@ app.on('will-quit', () => {
   // Unregister all shortcuts
   globalShortcut.unregisterAll();
   destroyTray();
+  stopControlServer();
 });
