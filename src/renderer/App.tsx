@@ -26,6 +26,9 @@ export default function App() {
   // Bumped by the control server; RecordPage watches it and stages the meeting
   // happening now. A counter rather than a flag so two requests in a row both land.
   const [selectNextSignal, setSelectNextSignal] = useState(0);
+  // Same idea for "start recording now"; RecordPage only acts on a change it
+  // sees while mounted, so a stale signal can't start a recording on its own.
+  const [startRecordingSignal, setStartRecordingSignal] = useState(0);
   const jobCleanupRef = useRef<Map<string, () => void>>(new Map());
   const jobExpiryRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -207,6 +210,19 @@ export default function App() {
     return unsub;
   }, []);
 
+  // The control server asking to start recording — the Stream Deck key held
+  // down while nothing is recording. The page does the actual starting, since
+  // the staged meeting, title, notebook and devices all live there.
+  useEffect(() => {
+    const unsub = window.meetingMind.on('control:start-recording', () => {
+      setCurrentPage('record');
+      // A tick later, so a page that had to mount first is listening by the
+      // time the signal changes.
+      setTimeout(() => setStartRecordingSignal(n => n + 1), 80);
+    });
+    return unsub;
+  }, []);
+
   function handleDismissJob(recordingId: string) {
     setBackgroundJobs(prev => prev.filter(j => j.recordingId !== recordingId));
     const expiry = jobExpiryRef.current.get(recordingId);
@@ -325,6 +341,7 @@ export default function App() {
             onRecordingSaved={handleRecordingSaved}
             activeNotebook={activeNotebook}
             selectNextSignal={selectNextSignal}
+            startRecordingSignal={startRecordingSignal}
           />
         )}
         {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} activeNotebook={activeNotebook} notebooks={notebooks} activeProjectFilter={activeProjectFilter} projects={projects} />}

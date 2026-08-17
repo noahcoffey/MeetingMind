@@ -8,11 +8,13 @@ interface RecordPageProps {
   /** Bumped when something outside the page asks for the meeting at hand to be
    *  staged (the control server, driven by the Stream Deck key). */
   selectNextSignal?: number;
+  /** Bumped when something outside the page presses Record for you. */
+  startRecordingSignal?: number;
 }
 
 type PipelineStage = 'idle' | 'recording' | 'stopping' | 'merging' | 'complete';
 
-export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook, selectNextSignal }: RecordPageProps) {
+export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook, selectNextSignal, startRecordingSignal }: RecordPageProps) {
   const [stage, setStage] = useState<PipelineStage>('idle');
   const [duration, setDuration] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -78,6 +80,11 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     if (!pendingSelectRef.current) return;
     // Mid-recording the staged meeting is already committed; leave it alone.
     if (stage !== 'idle' && stage !== 'complete') return;
+    // Sitting on the "Recording saved!" card, the page is showing the last
+    // meeting, not this one — being asked for Record again means the same thing
+    // as pressing New Meeting. Done before the calendar check, since an empty
+    // calendar is no reason to leave the old recording's card up.
+    if (stage === 'complete') handleReset();
     if (!calendarEvents.length) return;
     pendingSelectRef.current = false;
     const meeting = pickCurrentMeeting(calendarEvents);
@@ -85,6 +92,17 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     setSelectedEvent(meeting);
     setMeetingTitle(meeting.title);
   }, [selectNextSignal, calendarEvents, stage]);
+
+  // Something outside the page pressed Record — the Stream Deck key, held down
+  // with nothing recording. Only a change seen while mounted counts, so a
+  // signal from before this page existed can't start a recording behind you.
+  const lastStartSignalRef = useRef(startRecordingSignal);
+  useEffect(() => {
+    if (startRecordingSignal === lastStartSignalRef.current) return;
+    lastStartSignalRef.current = startRecordingSignal;
+    if (stage !== 'idle' && stage !== 'complete') return;
+    handleToggleRecording();
+  }, [startRecordingSignal]);
 
   useEffect(() => {
     if (!isRecording) return;

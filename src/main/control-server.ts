@@ -135,6 +135,22 @@ async function handle(req: IncomingMessage, res: ServerResponse, deps: ControlDe
       return json(res, 200, statusBody());
     }
 
+    // Start recording whatever is staged. The renderer has to do it: the
+    // selected meeting, the title, the notebook and the chosen devices all live
+    // on the Record page, and starting from here would drop every one of them.
+    case '/start': {
+      const status = getRecordingStatus();
+      if (status.recording) return json(res, 409, { ...statusBody(), ok: false, error: 'already recording' });
+      deps.showWindow();
+      deps.sendToRenderer('control:navigate-record', { selectNext: true });
+      // Let the page mount and the staged meeting settle before pressing its
+      // own Record button -- a start that races the staging records an
+      // untitled meeting, which is worse than a start that takes half a second.
+      setTimeout(() => deps.sendToRenderer('control:start-recording'), 500);
+      log('info', 'Control: starting recording');
+      return json(res, 200, { ok: true, starting: true });
+    }
+
     default:
       return json(res, 404, { ok: false, error: 'unknown route' });
   }

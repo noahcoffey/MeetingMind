@@ -132,6 +132,7 @@ const api = {
       'recording:error',
       'recording:stopped-externally',
       'control:navigate-record',
+      'control:start-recording',
       'transcription:progress',
       'notes:stream',
       'notes:complete',
