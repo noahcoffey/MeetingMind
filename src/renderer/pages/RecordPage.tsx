@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { pickCurrentMeeting } from '../pick-meeting';
 
 interface RecordPageProps {
   onRecordingComplete?: (recordingId: string) => void;
@@ -10,27 +11,6 @@ interface RecordPageProps {
 }
 
 type PipelineStage = 'idle' | 'recording' | 'stopping' | 'merging' | 'complete';
-
-/** How far ahead a meeting can start and still count as "the one you're about
- *  to record". Beyond this it is tomorrow's problem, and staging it would be a
- *  wrong guess rather than a helpful one. */
-const UPCOMING_WINDOW_MS = 30 * 60 * 1000;
-
-/** The meeting happening now, else the next one starting soon. Null if neither
- *  — better a blank title than the wrong meeting's. */
-function pickCurrentMeeting(events: any[]): any | null {
-  const now = Date.now();
-  const live = events.find(e => {
-    const start = new Date(e.startTime).getTime();
-    return start <= now && new Date(e.endTime).getTime() >= now;
-  });
-  if (live) return live;
-  const soon = events.find(e => {
-    const start = new Date(e.startTime).getTime();
-    return start > now && start - now <= UPCOMING_WINDOW_MS;
-  });
-  return soon || null;
-}
 
 export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook, selectNextSignal }: RecordPageProps) {
   const [stage, setStage] = useState<PipelineStage>('idle');
