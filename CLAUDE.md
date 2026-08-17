@@ -22,6 +22,25 @@ npm test             # jest
 
 API keys live in the macOS Keychain via keytar (service `MeetingMind`), not in electron-store.
 
+## Control channel (local companions)
+
+`src/main/control-server.ts` runs a small HTTP server on `127.0.0.1` so something else on this
+machine — a Stream Deck key, today — can see whether a recording is running and drive it:
+`/status`, `/pause` (toggles), `/stop`, `/focus?select=next`. It listens on an ephemeral port
+and publishes that port with a per-launch token to `control.json` in `userData` (0600); every
+request must carry the token in `x-meetingmind-token`.
+
+**A stop from outside the Record page must go through `stopRecordingExternally()`.** The
+renderer drives its own stop and hands the recording to the transcription pipeline; plain
+`stopRecording()` saves the audio and nothing picks it up. That helper broadcasts
+`recording:stopped-externally`, which `App.tsx` turns into the pipeline handoff and
+`RecordPage` into its finished state — and which `RecordPage` unsubscribes from *individually*,
+since its usual `removeAllListeners` would take App's listener with it on unmount.
+
+Which meeting `select=next` stages is `src/renderer/pick-meeting.ts` (tested). All-day entries
+are skipped: an ICS all-day event is just a 24-hour span with nothing marking it, so it spans
+every "now" and otherwise wins against the meeting actually in progress.
+
 ## Bundled Python interpreter (WhisperX Local)
 
 WhisperX Local runs transcription/diarization on-device through Python. To avoid requiring users to install Python, a hermetic [python-build-standalone](https://github.com/astral-sh/python-build-standalone) CPython 3.11 is bundled inside the app — the same pattern as the bundled `ffmpeg`.
