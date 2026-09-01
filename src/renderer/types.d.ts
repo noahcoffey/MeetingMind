@@ -43,6 +43,8 @@ export interface MeetingMindAPI {
   copyNotesToClipboard: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
   exportAsPDF: (recordingId: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   emailNotes: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
+  copyTranscriptToClipboard: (recordingId: string) => Promise<{ success: boolean; error?: string }>;
+  exportTranscript: (recordingId: string) => Promise<{ success: boolean; path?: string; error?: string; canceled?: boolean }>;
   searchRecordings: (query: string) => Promise<SearchResult[]>;
   setRecordingTags: (recordingId: string, tags: string[]) => Promise<{ success: boolean }>;
   getAllTags: () => Promise<string[]>;

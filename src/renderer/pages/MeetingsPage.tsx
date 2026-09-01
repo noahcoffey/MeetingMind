@@ -34,6 +34,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>('notes');
   const [utterances, setUtterances] = useState<any[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -451,7 +452,9 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
 
   function showToast(msg: string) {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 3000);
+    // Restart the countdown so a rapid second toast isn't cut short by the first timer
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMessage(''), 3000);
   }
 
   function formatDuration(seconds: number): string {
@@ -864,6 +867,13 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                         </button>
                         <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).emailNotes(selectedMeeting.id); if (!r.success) showToast(`Email failed: ${r.error}`); }}>
                           Email to Attendees
+                        </button>
+                        <div className="actions-dropdown-sep" />
+                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).copyTranscriptToClipboard(selectedMeeting.id); showToast(r.success ? 'Transcript copied to clipboard' : `Copy failed: ${r.error}`); }}>
+                          Copy Transcript (with names)
+                        </button>
+                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).exportTranscript(selectedMeeting.id); if (r.success) showToast(`Transcript saved: ${r.path}`); else if (!r.canceled) showToast(`Export failed: ${r.error}`); }}>
+                          Export Transcript&hellip;
                         </button>
                         <div className="actions-dropdown-sep" />
                         <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); window.meetingMind.openInFinder(selectedMeeting.audioPath); }}>

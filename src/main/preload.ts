@@ -72,6 +72,8 @@ const api = {
   copyNotesToClipboard: (recordingId: string) => ipcRenderer.invoke('export:clipboard', recordingId),
   exportAsPDF: (recordingId: string) => ipcRenderer.invoke('export:pdf', recordingId),
   emailNotes: (recordingId: string) => ipcRenderer.invoke('export:email', recordingId),
+  copyTranscriptToClipboard: (recordingId: string) => ipcRenderer.invoke('export:transcriptClipboard', recordingId),
+  exportTranscript: (recordingId: string) => ipcRenderer.invoke('export:transcriptFile', recordingId),
 
   // Search
   searchRecordings: (query: string) => ipcRenderer.invoke('search:query', query),

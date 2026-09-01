@@ -1,4 +1,4 @@
-import { clipboard, shell, BrowserWindow } from 'electron';
+import { clipboard, shell, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { log } from './logger';
@@ -287,5 +287,137 @@ export function emailNotes(recordingId: string): { success: boolean; error?: str
   } catch (err) {
     log('error', `Failed to open email for notes`, err);
     return { success: false, error: `Failed to email: ${err}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Transcript export
+//
+// Speaker labels live in manifest.json (`speakerNames`), never in
+// transcript.json — the transcript keeps the pipeline's original
+// "Speaker 1"/"A" keys so the Speakers tab can keep re-labeling them. Names are
+// resolved here, at export time, the same way notes-generator does before
+// prompting Claude.
+// ---------------------------------------------------------------------------
+
+function formatClock(ms: number): string {
+  return new Date(ms).toISOString().substr(11, 8);
+}
+
+function formatExportDuration(seconds: number): string {
+  if (!seconds) return 'unknown';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+/**
+ * Render a transcript as markdown with speaker names resolved — the format
+ * meant to be handed to an LLM: a short header of who/when, a speaker legend,
+ * then `[HH:MM:SS] Name: text` lines.
+ */
+export function buildTranscriptMarkdown(recording: any, transcriptData: any): string {
+  const speakerNames: Record<string, string> = recording?.speakerNames || {};
+  const title = recording?.calendarEvent?.title || recording?.title || 'Untitled Meeting';
+  const date = recording?.date ? new Date(recording.date).toLocaleString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  }) : 'Unknown date';
+
+  const lines: string[] = [];
+  lines.push(`# Transcript: ${title}`);
+  lines.push('');
+  lines.push(`- **Date:** ${date}`);
+  lines.push(`- **Duration:** ${formatExportDuration(recording?.duration)}`);
+
+  const utterances: any[] = Array.isArray(transcriptData?.utterances) ? transcriptData.utterances : [];
+
+  if (utterances.length > 0) {
+    const keys: string[] = [];
+    for (const u of utterances) {
+      if (!keys.includes(u.speaker)) keys.push(u.speaker);
+    }
+    const labeled = keys.filter(k => speakerNames[k]);
+    if (labeled.length > 0) {
+      lines.push(`- **Speakers:** ${keys.map(k => speakerNames[k] || `${k} (unidentified)`).join(', ')}`);
+    } else {
+      lines.push(`- **Speakers:** ${keys.join(', ')} (not identified)`);
+    }
+  }
+
+  if (recording?.userContext) {
+    lines.push(`- **Context:** ${recording.userContext}`);
+  }
+
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+
+  if (utterances.length === 0) {
+    lines.push(transcriptData?.text || '_No transcript available._');
+  } else {
+    for (const u of utterances) {
+      const speaker = speakerNames[u.speaker] || u.speaker;
+      lines.push(`[${formatClock(u.start)}] **${speaker}:** ${u.text}`);
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n').replace(/\n+$/, '\n');
+}
+
+function getTranscriptMarkdown(recordingId: string): { markdown: string; recording: any } | null {
+  const recording = getRecording(recordingId);
+  if (!recording) return null;
+
+  const outputDir = path.dirname(recording.audioPath);
+  const transcriptPath = path.join(outputDir, 'transcript.json');
+  if (!fs.existsSync(transcriptPath)) return null;
+
+  const transcriptData = JSON.parse(fs.readFileSync(transcriptPath, 'utf-8'));
+  return { markdown: buildTranscriptMarkdown(recording, transcriptData), recording };
+}
+
+// Copy the speaker-labeled transcript to the clipboard as markdown.
+export function copyTranscriptToClipboard(recordingId: string): { success: boolean; error?: string } {
+  try {
+    const result = getTranscriptMarkdown(recordingId);
+    if (!result) return { success: false, error: 'Recording or transcript not found' };
+
+    clipboard.writeText(result.markdown);
+    log('info', `Transcript copied to clipboard for recording ${recordingId}`);
+    return { success: true };
+  } catch (err) {
+    log('error', 'Failed to copy transcript to clipboard', err);
+    return { success: false, error: `Failed to copy: ${err}` };
+  }
+}
+
+// Save the speaker-labeled transcript to a file the user picks.
+export async function exportTranscriptAsMarkdown(recordingId: string): Promise<{ success: boolean; path?: string; error?: string; canceled?: boolean }> {
+  try {
+    const result = getTranscriptMarkdown(recordingId);
+    if (!result) return { success: false, error: 'Recording or transcript not found' };
+
+    const { markdown, recording } = result;
+    const baseName = (recording.calendarEvent?.title || recording.title || 'transcript')
+      .replace(/[/\\:*?"<>|]/g, '-')
+      .trim() || 'transcript';
+    const datePart = recording.date ? new Date(recording.date).toISOString().slice(0, 10) : '';
+
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: 'Export Transcript',
+      defaultPath: `${datePart ? datePart + ' ' : ''}${baseName} transcript.md`,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    });
+
+    if (canceled || !filePath) return { success: false, canceled: true };
+
+    fs.writeFileSync(filePath, markdown, 'utf-8');
+    log('info', `Transcript exported for recording ${recordingId}`, { path: filePath });
+    return { success: true, path: filePath };
+  } catch (err) {
+    log('error', 'Failed to export transcript', err);
+    return { success: false, error: `Failed to export: ${err}` };
   }
 }

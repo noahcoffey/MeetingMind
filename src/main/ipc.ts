@@ -20,7 +20,7 @@ import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyz
 import { sendToMeetingHub, getMeetingHubActivity, clearMeetingHubActivity } from './meetinghub';
 import { getCalendarEvents, invalidateCalendarCache, connectGoogle, connectMicrosoft, disconnectCalendar } from './calendar';
 import { listSystemAudioDevices } from './system-audio';
-import { copyNotesToClipboard, exportNotesAsPDF, emailNotes } from './export';
+import { copyNotesToClipboard, exportNotesAsPDF, emailNotes, copyTranscriptToClipboard, exportTranscriptAsMarkdown } from './export';
 import { searchRecordings } from './search';
 import { setTags, getAllTags } from './tagger';
 import { getAnalyticsStats, generateTrendInsights } from './analytics';
@@ -250,6 +250,14 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('export:email', async (_event, recordingId: string) => {
     return emailNotes(recordingId);
+  });
+
+  ipcMain.handle('export:transcriptClipboard', async (_event, recordingId: string) => {
+    return copyTranscriptToClipboard(recordingId);
+  });
+
+  ipcMain.handle('export:transcriptFile', async (_event, recordingId: string) => {
+    return exportTranscriptAsMarkdown(recordingId);
   });
 
   // Speaker renaming
