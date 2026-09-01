@@ -26,7 +26,8 @@ const api = {
   getRecordingStatus: () => ipcRenderer.invoke('recording:status'),
 
   // Recordings library
-  getRecordings: () => ipcRenderer.invoke('recordings:list'),
+  getRecordings: (range?: { startMs: number; endMs: number }) => ipcRenderer.invoke('recordings:list', range),
+  getRecordingIndex: () => ipcRenderer.invoke('recordings:index'),
   getRecording: (id: string) => ipcRenderer.invoke('recordings:get', id),
   deleteRecording: (id: string) => ipcRenderer.invoke('recordings:delete', id),
 

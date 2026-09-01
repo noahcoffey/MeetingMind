@@ -23,7 +23,7 @@ jest.mock('./store', () => ({
 }));
 
 import { getSetting } from './store';
-import { listRecordings, getRecording, deleteRecording, getRecordingStatus, isPathInsideRecordingsDir } from './recording-manager';
+import { listRecordings, listRecordingIndex, getRecording, deleteRecording, getRecordingStatus, isPathInsideRecordingsDir } from './recording-manager';
 
 const mockGetSetting = getSetting as jest.MockedFunction<typeof getSetting>;
 
@@ -81,6 +81,96 @@ describe('recording-manager', () => {
 
       const recordings = listRecordings();
       expect(recordings).toHaveLength(1);
+    });
+
+    describe('with a date range', () => {
+      const ms = (iso: string) => new Date(iso).getTime();
+
+      beforeEach(() => {
+        createRecording('jan', { id: 'jan', title: 'Jan', date: '2025-01-10T10:00:00Z' });
+        createRecording('jun', { id: 'jun', title: 'Jun', date: '2025-06-10T10:00:00Z' });
+        createRecording('dec', { id: 'dec', title: 'Dec', date: '2025-12-10T10:00:00Z' });
+      });
+
+      test('returns only recordings inside the range, still newest first', () => {
+        const recordings = listRecordings({
+          startMs: ms('2025-01-01T00:00:00Z'),
+          endMs: ms('2025-07-01T00:00:00Z'),
+        });
+        expect(recordings.map(r => r.id)).toEqual(['jun', 'jan']);
+      });
+
+      test('is inclusive of both bounds', () => {
+        const recordings = listRecordings({
+          startMs: ms('2025-06-10T10:00:00Z'),
+          endMs: ms('2025-06-10T10:00:00Z'),
+        });
+        expect(recordings.map(r => r.id)).toEqual(['jun']);
+      });
+
+      test('returns nothing when the range holds no meetings', () => {
+        const recordings = listRecordings({
+          startMs: ms('2025-08-01T00:00:00Z'),
+          endMs: ms('2025-09-01T00:00:00Z'),
+        });
+        expect(recordings).toEqual([]);
+      });
+
+      test('returns everything when no range is passed', () => {
+        expect(listRecordings()).toHaveLength(3);
+      });
+
+      test('drops manifests with an unparseable date rather than including them', () => {
+        createRecording('broken', { id: 'broken', title: 'Broken', date: 'not-a-date' });
+        const recordings = listRecordings({
+          startMs: ms('2025-01-01T00:00:00Z'),
+          endMs: ms('2025-12-31T00:00:00Z'),
+        });
+        expect(recordings.map(r => r.id)).not.toContain('broken');
+      });
+    });
+  });
+
+  describe('listRecordingIndex', () => {
+    test('returns an empty index when there are no recordings', () => {
+      expect(listRecordingIndex()).toEqual([]);
+    });
+
+    test('projects only the fields the calendar needs', () => {
+      createRecording('rec-1', {
+        id: 'rec-1',
+        title: 'Standup',
+        date: '2025-06-10T10:00:00Z',
+        notebook: 'Work',
+        project: 'proj-9',
+        tags: ['weekly'],
+        audioPath: '/somewhere/audio.m4a',
+        duration: 1800,
+      });
+
+      expect(listRecordingIndex()).toEqual([
+        {
+          id: 'rec-1',
+          ms: new Date('2025-06-10T10:00:00Z').getTime(),
+          notebook: 'Work',
+          project: 'proj-9',
+          tags: ['weekly'],
+        },
+      ]);
+    });
+
+    test('skips entries with an unparseable date', () => {
+      createRecording('good', { id: 'good', title: 'Good', date: '2025-06-10T10:00:00Z' });
+      createRecording('broken', { id: 'broken', title: 'Broken', date: 'not-a-date' });
+
+      expect(listRecordingIndex().map(e => e.id)).toEqual(['good']);
+    });
+
+    test('covers every recording, unlike a windowed list', () => {
+      createRecording('jan', { id: 'jan', title: 'Jan', date: '2025-01-10T10:00:00Z' });
+      createRecording('dec', { id: 'dec', title: 'Dec', date: '2025-12-10T10:00:00Z' });
+
+      expect(listRecordingIndex()).toHaveLength(2);
     });
   });
 

@@ -14,6 +14,8 @@ import {
   deleteRecording,
   testSystemAudio,
   isPathInsideRecordingsDir,
+  listRecordingIndex,
+  type MsRange,
 } from './recording-manager';
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyzeSentiment } from './notes-generator';
@@ -148,8 +150,12 @@ export function setupIpcHandlers(): void {
   });
 
   // Recordings library
-  ipcMain.handle('recordings:list', async () => {
-    return listRecordings();
+  ipcMain.handle('recordings:list', async (_event, range?: MsRange) => {
+    return listRecordings(range);
+  });
+
+  ipcMain.handle('recordings:index', async () => {
+    return listRecordingIndex();
   });
 
   ipcMain.handle('recordings:get', async (_event, id: string) => {

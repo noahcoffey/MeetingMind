@@ -18,7 +18,8 @@ export interface MeetingMindAPI {
   pauseRecording: () => Promise<{ success: boolean; error?: string }>;
   resumeRecording: () => Promise<{ success: boolean; error?: string }>;
   getRecordingStatus: () => Promise<{ recording: boolean; duration: number; chunkCount: number; isPaused: boolean }>;
-  getRecordings: () => Promise<Recording[]>;
+  getRecordings: (range?: MsRange) => Promise<Recording[]>;
+  getRecordingIndex: () => Promise<RecordingIndexEntry[]>;
   getRecording: (id: string) => Promise<Recording | null>;
   deleteRecording: (id: string) => Promise<{ success: boolean; error?: string }>;
   startTranscription: (recordingId: string, opts?: { forceNormalize?: boolean }) => Promise<{ success: boolean; error?: string; normalized?: boolean }>;
@@ -69,6 +70,21 @@ export interface MeetingMindAPI {
   openExternal: (url: string) => Promise<void>;
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void;
   removeAllListeners: (channel: string) => void;
+}
+
+/** An epoch-millisecond range used to window the recordings list. */
+export interface MsRange {
+  startMs: number;
+  endMs: number;
+}
+
+/** Lightweight per-recording entry powering the Meetings calendar's day markers. */
+export interface RecordingIndexEntry {
+  id: string;
+  ms: number;
+  notebook?: string;
+  project?: string;
+  tags?: string[];
 }
 
 export interface Recording {

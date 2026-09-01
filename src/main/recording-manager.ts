@@ -769,26 +769,73 @@ export function testSystemAudio(deviceId: string, durationSec: number = 4): Prom
   });
 }
 
-// List all saved recordings
-export function listRecordings(): any[] {
+// A recording's date range, as epoch milliseconds. Day boundaries are worked out
+// in the renderer (src/renderer/meeting-dates.ts) because only it knows the user's
+// local calendar; main just compares numbers.
+export interface MsRange {
+  startMs: number;
+  endMs: number;
+}
+
+// Just enough of every recording to drive the Meetings calendar: which days have
+// meetings, how far back they go, and the filters that apply to them.
+export interface RecordingIndexEntry {
+  id: string;
+  ms: number;
+  notebook?: string;
+  project?: string;
+  tags?: string[];
+}
+
+// Walk the output dir once and parse every manifest. Unsorted, unfiltered.
+function readAllManifests(): any[] {
   const outputDir = getOutputDir();
   if (!fs.existsSync(outputDir)) return [];
 
-  const recordings: any[] = [];
+  const manifests: any[] = [];
   try {
     const dirs = fs.readdirSync(outputDir);
     for (const dir of dirs) {
       const manifestPath = path.join(outputDir, dir, 'manifest.json');
       if (fs.existsSync(manifestPath)) {
         try {
-          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-          recordings.push(manifest);
+          manifests.push(JSON.parse(fs.readFileSync(manifestPath, 'utf-8')));
         } catch {}
       }
     }
   } catch {}
 
+  return manifests;
+}
+
+// List saved recordings, newest first. Pass a range to limit the result to
+// meetings that fall inside it; callers that need the whole archive omit it.
+export function listRecordings(range?: MsRange): any[] {
+  let recordings = readAllManifests();
+
+  if (range) {
+    const { startMs, endMs } = range;
+    recordings = recordings.filter(rec => {
+      const t = new Date(rec.date).getTime();
+      return !Number.isNaN(t) && t >= startMs && t <= endMs;
+    });
+  }
+
   return recordings.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+// A lightweight index of every recording, for the calendar's day markers. Cheap
+// to send across the bridge even with thousands of meetings.
+export function listRecordingIndex(): RecordingIndexEntry[] {
+  return readAllManifests()
+    .map(m => ({
+      id: m.id,
+      ms: new Date(m.date).getTime(),
+      notebook: m.notebook,
+      project: m.project,
+      tags: m.tags,
+    }))
+    .filter(e => e.id && !Number.isNaN(e.ms));
 }
 
 export function getRecording(id: string): any | null {

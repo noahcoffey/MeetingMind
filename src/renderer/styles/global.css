@@ -1817,3 +1817,133 @@ body {
 .markdown-rendered code { background: var(--code-bg); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 .markdown-rendered strong { font-weight: 600; color: var(--text-primary); }
 .markdown-rendered hr { border: none; border-top: 1px solid var(--border-color); margin: 16px 0; }
+
+/* ─── Meetings month calendar ─── */
+/* Namespaced mm-cal-* so it stays clear of the Record page's rp-cal-* event
+   sidebar, which is an agenda list rather than a date picker. */
+
+.mm-cal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin: 0 8px 8px;
+  flex-shrink: 0;
+}
+
+.mm-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.mm-cal-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mm-cal-nav {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.mm-cal-nav:hover:not(:disabled) { background: var(--bg-input); color: var(--text-primary); }
+.mm-cal-nav:disabled { opacity: 0.3; cursor: default; }
+
+.mm-cal-weekdays,
+.mm-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.mm-cal-weekday {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  padding-bottom: 4px;
+}
+
+.mm-cal-cell {
+  aspect-ratio: 1;
+  min-height: 30px;
+}
+.mm-cal-cell.is-blank { visibility: hidden; }
+
+.mm-cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.mm-cal-day:hover:not(:disabled) { background: var(--bg-input); }
+.mm-cal-day:disabled { opacity: 0.25; cursor: default; }
+.mm-cal-day.has-meetings { color: var(--text-primary); font-weight: 600; }
+.mm-cal-day.is-today { box-shadow: inset 0 0 0 1px var(--accent-blue); }
+.mm-cal-day.is-selected { background: var(--accent-blue); color: var(--text-on-accent); }
+.mm-cal-day.is-selected:hover { background: var(--accent-blue); }
+
+.mm-cal-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+}
+.mm-cal-day.is-selected .mm-cal-dot { background: var(--cal-selected-text); }
+
+.mm-cal-count {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--accent-blue);
+  font-variant-numeric: tabular-nums;
+}
+.mm-cal-day.is-selected .mm-cal-count { color: var(--cal-selected-detail); }
+
+.mm-cal-empty {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* "Showing Aug 12 · Back to recent" chip above the meetings list */
+.mm-date-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 8px 6px;
+  padding: 4px 8px;
+  background: var(--accent-blue-tint);
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--accent-blue);
+  flex-shrink: 0;
+}
+.mm-date-chip-label { font-weight: 600; }
+.mm-date-chip-clear {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--accent-blue);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}

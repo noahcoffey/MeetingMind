@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import type { Recording, Project } from '../types';
+import type { Recording, Project, RecordingIndexEntry } from '../types';
 import TagEditor from '../components/TagEditor';
 import TranscriptViewer from '../components/TranscriptViewer';
 import AudioPlayer from '../components/AudioPlayer';
@@ -7,6 +7,16 @@ import SearchBar from '../components/SearchBar';
 import SpeakerPanel from '../components/SpeakerPanel';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import MarkdownRenderer from '../components/MarkdownRenderer';
+import MonthCalendar from '../components/MonthCalendar';
+import {
+  DayKey,
+  countsByDay,
+  dayBoundsMs,
+  dayKeyLocal,
+  formatDayShort,
+  monthOfDay,
+  recentWindowMs,
+} from '../meeting-dates';
 
 interface MeetingsPageProps {
   initialMeetingId?: string | null;
@@ -17,6 +27,12 @@ interface MeetingsPageProps {
 }
 
 type DetailTab = 'notes' | 'transcript' | 'speakers' | 'ask';
+
+/**
+ * Which slice of the archive the list is showing. 'recent' is the default
+ * two-week window; 'day' is a single day picked from the calendar.
+ */
+type DateView = { mode: 'recent' } | { mode: 'day'; day: DayKey };
 
 interface QAEntry {
   id: string;
@@ -62,6 +78,22 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const actionsMenuRef = useRef<HTMLDivElement>(null);
   const selectedMeetingRef = useRef<Recording | null>(null);
+  const [dateView, setDateView] = useState<DateView>({ mode: 'recent' });
+  // The pipeline event handlers below are registered once with [] deps, so they
+  // close over the first render. They read the view through this ref, or every
+  // 'notes:complete' would quietly reload the recent window and yank the user
+  // out of whatever day they were browsing.
+  const dateViewRef = useRef<DateView>({ mode: 'recent' });
+  const [recIndex, setRecIndex] = useState<RecordingIndexEntry[]>([]);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  // Only the calendar reads the index, and building it costs a full pass over
+  // every manifest - so don't pay for it on each pipeline event when the panel
+  // is closed. Ref, not state, for the same stale-closure reason as dateViewRef.
+  const calendarOpenRef = useRef(false);
+  const [calMonth, setCalMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  });
 
   const [audioState, audioControls] = useAudioPlayer();
 
@@ -150,17 +182,67 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   }, [showActionsMenu]);
 
   useEffect(() => {
-    if (initialMeetingId && meetings.length > 0) {
-      const rec = meetings.find(r => r.id === initialMeetingId);
-      if (rec) selectMeeting(rec);
+    if (initialMeetingId) selectMeetingById(initialMeetingId);
+  }, [initialMeetingId]);
+
+  /**
+   * Select a meeting that may sit outside the loaded window - a search hit, or a
+   * deep link from another page. The list no longer holds the whole archive, so
+   * the record is fetched from main and the list jumps to its day if needed.
+   */
+  async function selectMeetingById(id: string) {
+    const rec = await window.meetingMind.getRecording(id);
+    if (!rec) {
+      showToast('Meeting not found');
+      return;
     }
-  }, [initialMeetingId, meetings]);
+    // Decide from dates, not from meetings.some(...): on mount the initial
+    // loadMeetings() has not resolved yet, so a membership check would report
+    // false for a recent meeting and needlessly drop us into day view.
+    const view = dateViewRef.current;
+    const { startMs, endMs } = view.mode === 'day' ? dayBoundsMs(view.day) : recentWindowMs();
+    const t = new Date(rec.date).getTime();
+    if (t < startMs || t > endMs) showDay(dayKeyLocal(rec.date));
+    selectMeeting(rec);
+  }
 
   async function loadMeetings() {
+    const view = dateViewRef.current;
+    const range = view.mode === 'day' ? dayBoundsMs(view.day) : recentWindowMs();
     try {
-      const list = await window.meetingMind.getRecordings();
+      const list = await window.meetingMind.getRecordings(range);
       setMeetings(list);
     } catch {}
+    if (calendarOpenRef.current) loadIndex();
+  }
+
+  async function loadIndex() {
+    try {
+      setRecIndex(await window.meetingMind.getRecordingIndex());
+    } catch {}
+  }
+
+  // Set the ref before awaiting so loadMeetings() sees the new view immediately
+  // rather than a render later.
+  function showDay(day: DayKey) {
+    dateViewRef.current = { mode: 'day', day };
+    setDateView({ mode: 'day', day });
+    setCalMonth(monthOfDay(day));
+    loadMeetings();
+  }
+
+  function toggleCalendar() {
+    const open = !calendarOpenRef.current;
+    calendarOpenRef.current = open;
+    setCalendarOpen(open);
+    // Refresh on open so the dots reflect anything recorded since last time.
+    if (open) loadIndex();
+  }
+
+  function backToRecent() {
+    dateViewRef.current = { mode: 'recent' };
+    setDateView({ mode: 'recent' });
+    loadMeetings();
   }
 
   async function loadAllTags() {
@@ -493,6 +575,21 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     : projectMeetings;
   const activeProject = activeProjectFilter ? projects.find(p => p.id === activeProjectFilter) : null;
 
+  // Run the index through the same notebook -> project -> tag chain as the list,
+  // so a calendar dot never promises a day that would render empty.
+  const indexEntries = recIndex.filter(e => {
+    if (activeNotebook && (e.notebook || defaultNotebook) !== activeNotebook) return false;
+    if (activeProjectFilter && e.project !== activeProjectFilter) return false;
+    if (filterTag && !e.tags?.includes(filterTag)) return false;
+    return true;
+  });
+  const dayCounts = countsByDay(indexEntries);
+  const todayKey = dayKeyLocal(Date.now());
+  const minDay = indexEntries.length
+    ? dayKeyLocal(indexEntries.reduce((min, e) => Math.min(min, e.ms), Infinity))
+    : null;
+  const selectedDay = dateView.mode === 'day' ? dateView.day : null;
+
   // Group meetings by day
   function getDayLabel(dateStr: string): string {
     const d = new Date(dateStr);
@@ -583,11 +680,17 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
           {/* Fixed toolbar */}
           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 8px 8px' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <SearchBar onSelectResult={(id) => {
-                const rec = meetings.find(r => r.id === id);
-                if (rec) selectMeeting(rec);
-              }} />
+              <SearchBar onSelectResult={(id) => { selectMeetingById(id); }} />
             </div>
+            <button
+              className="btn btn-secondary"
+              onClick={toggleCalendar}
+              title="Browse meetings by date"
+              aria-pressed={calendarOpen}
+              style={{ fontSize: 11, padding: '6px 8px', flexShrink: 0 }}
+            >
+              &#128197;
+            </button>
             {allTags.length > 0 && (
               <select
                 value={filterTag || ''}
@@ -608,11 +711,37 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
             )}
           </div>
 
+          {calendarOpen && (
+            <MonthCalendar
+              year={calMonth.year}
+              month={calMonth.month}
+              countsByDay={dayCounts}
+              selectedDay={selectedDay}
+              todayKey={todayKey}
+              minDay={minDay}
+              onMonthChange={(year, month) => setCalMonth({ year, month })}
+              onSelectDay={showDay}
+            />
+          )}
+
+          {dateView.mode === 'day' && (
+            <div className="mm-date-chip">
+              <span className="mm-date-chip-label">Showing {formatDayShort(dateView.day)}</span>
+              <button className="mm-date-chip-clear" onClick={backToRecent}>Back to recent</button>
+            </div>
+          )}
+
           {/* Scrollable meetings list */}
           <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
           {filteredMeetings.length === 0 && (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              {filterTag ? 'No meetings with this tag.' : 'No meetings yet. Record a meeting to get started.'}
+              {dateView.mode === 'day'
+                ? (filterTag
+                    ? `No meetings on ${formatDayShort(dateView.day)} matching your filters.`
+                    : `No meetings on ${formatDayShort(dateView.day)}.`)
+                : (filterTag
+                    ? 'No meetings with this tag.'
+                    : 'No meetings in the last two weeks. Use the calendar to browse further back.')}
             </div>
           )}
 
