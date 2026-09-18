@@ -39,6 +39,10 @@ const api = {
   // Transcript data
   getTranscript: (recordingId: string) => ipcRenderer.invoke('transcription:getTranscript', recordingId),
 
+  // Live dictation (experiment)
+  dictate: (pcm: Uint8Array, opts: { sampleRate: number; channels: number; sttPrompt?: string; keyterms?: string[]; llmInstruction?: string; languageCodes?: string[] }) =>
+    ipcRenderer.invoke('dictation:transcribe', pcm, opts),
+
   // WhisperX local transcription
   checkWhisperXReady: () => ipcRenderer.invoke('whisperx:checkReady'),
   setupWhisperX: () => ipcRenderer.invoke('whisperx:setup'),

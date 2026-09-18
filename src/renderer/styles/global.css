@@ -1947,3 +1947,100 @@ body {
   padding: 0;
   text-decoration: underline;
 }
+
+/* Dictate page (experiment) */
+.dictate-badge {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+.dictate-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.dictate-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dictate-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.dictate-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.dictate-status-listening .dictate-dot { background: var(--accent-green); }
+.dictate-status-speaking .dictate-dot { background: var(--accent-primary); animation: dictate-pulse 0.8s ease-in-out infinite; }
+.dictate-status-error .dictate-dot { background: var(--accent-primary); }
+@keyframes dictate-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.6; }
+}
+.dictate-meter {
+  flex: 1;
+  min-width: 80px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+.dictate-meter > div {
+  height: 100%;
+  background: var(--accent-green);
+  transition: width 80ms linear;
+}
+.dictate-error {
+  margin-top: 12px;
+  color: var(--accent-primary);
+  font-size: 13px;
+}
+.dictate-advanced {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.dictate-advanced summary { cursor: pointer; margin-bottom: 10px; }
+.dictate-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+}
+.dictate-hint { font-size: 12px; color: var(--text-muted); }
+.dictate-output {
+  flex: 1;
+  min-height: 220px;
+}
+.dictate-empty { color: var(--text-muted); }
+.dictate-text {
+  font-size: 16px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.dictate-utt-pending .dictate-pending { color: var(--text-muted); }
+.dictate-utt-error .dictate-utt-error, .dictate-utt-error { color: var(--accent-primary); font-size: 13px; }
+.dictate-utt-done { animation: dictate-fade 250ms ease-out; }
+@keyframes dictate-fade { from { opacity: 0; } to { opacity: 1; } }
+.dictate-stats {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+  color: var(--text-muted);
+}

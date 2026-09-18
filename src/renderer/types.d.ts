@@ -4,6 +4,25 @@ export interface AudioDevice {
   isVirtual: boolean;
 }
 
+export interface DictationOptions {
+  sampleRate: number;
+  channels: number;
+  sttPrompt?: string;
+  keyterms?: string[];
+  llmInstruction?: string;
+  languageCodes?: string[];
+}
+
+export interface DictationResult {
+  text: string;
+  cleaned: string | null;
+  llmError: string | null;
+  confidence: number;
+  audioDurationMs: number;
+  requestTimeMs: number;
+  roundTripMs: number;
+}
+
 export interface MeetingMindAPI {
   getSettings: () => Promise<Record<string, unknown>>;
   setSetting: (key: string, value: unknown) => Promise<boolean>;
@@ -26,6 +45,7 @@ export interface MeetingMindAPI {
   startTranscription: (recordingId: string, opts?: { forceNormalize?: boolean }) => Promise<{ success: boolean; error?: string; normalized?: boolean }>;
   getTranscriptionStatus: (recordingId: string) => Promise<{ status: string; progress?: number }>;
   getTranscript: (recordingId: string) => Promise<TranscriptUtterance[]>;
+  dictate: (pcm: Uint8Array, opts: DictationOptions) => Promise<{ success: boolean; result?: DictationResult; error?: string }>;
   checkWhisperXReady: () => Promise<{ ready: boolean }>;
   setupWhisperX: () => Promise<{ success: boolean; error?: string }>;
   generateNotes: (recordingId: string) => Promise<{ success: boolean; error?: string }>;

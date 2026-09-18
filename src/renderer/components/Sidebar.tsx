@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import PipelineWidget, { BackgroundJob } from './PipelineWidget';
 import type { Project } from '../types';
 
-type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
+type Page = 'record' | 'dictate' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
 interface SidebarProps {
   currentPage: Page;
@@ -301,6 +301,19 @@ export default function Sidebar({
             <circle cx="12" cy="12" r="4" fill="currentColor" />
           </svg>
           Record
+        </button>
+
+        <button
+          className={`sidebar-item ${currentPage === 'dictate' ? 'active' : ''}`}
+          onClick={() => onNavigate('dictate')}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="2" width="6" height="12" rx="3" />
+            <path d="M5 10a7 7 0 0 0 14 0" />
+            <line x1="12" y1="17" x2="12" y2="22" />
+            <line x1="8" y1="22" x2="16" y2="22" />
+          </svg>
+          Dictate
         </button>
 
         <button

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import RecordPage from './pages/RecordPage';
+import DictatePage from './pages/DictatePage';
 import MeetingsPage from './pages/MeetingsPage';
 import SettingsPage from './pages/SettingsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -9,7 +10,7 @@ import OnboardingFlow from './pages/OnboardingFlow';
 import type { BackgroundJob } from './components/PipelineWidget';
 import type { Project } from './types';
 
-type Page = 'record' | 'meetings' | 'settings' | 'analytics' | 'highlights';
+type Page = 'record' | 'dictate' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
 const JOB_AUTO_DISMISS_MS = 60_000;
 
@@ -344,6 +345,7 @@ export default function App() {
             startRecordingSignal={startRecordingSignal}
           />
         )}
+        {currentPage === 'dictate' && <DictatePage />}
         {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} activeNotebook={activeNotebook} notebooks={notebooks} activeProjectFilter={activeProjectFilter} projects={projects} />}
         {currentPage === 'settings' && <SettingsPage onSettingsChange={loadSettings} />}
         {currentPage === 'highlights' && <HighlightsPage />}

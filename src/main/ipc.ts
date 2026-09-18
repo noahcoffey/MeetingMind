@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell, BrowserWindow } from 'electron';
 import { getSetting, setSetting } from './store';
 import { log } from './logger';
+import { dictate, DictationOptions } from './dictation';
 import { isWhisperXReady, installWhisperXDeps } from './whisperx-setup';
 import {
   startRecording,
@@ -188,6 +189,16 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('transcription:status', async (_event, recordingId: string) => {
     return getTranscriptionStatus(recordingId);
+  });
+
+  // Live dictation (experiment): one utterance of raw PCM in, cleaned text out.
+  ipcMain.handle('dictation:transcribe', async (_event, pcm: Uint8Array, opts: DictationOptions) => {
+    try {
+      const result = await dictate(pcm, opts);
+      return { success: true, result };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
   });
 
   // WhisperX local transcription setup
