@@ -44,6 +44,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
   const animFrameRef = useRef<number>(0);
   const nextMeetingRef = useRef<HTMLDivElement | null>(null);
   const externalStopUnsubRef = useRef<null | (() => void)>(null);
+  const importingRef = useRef(false);
   const waveformCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const waveformHistoryRef = useRef<number[]>([]);
   const waveformContainerRef = useRef<HTMLDivElement | null>(null);
@@ -474,7 +475,18 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
   // of recording here. It takes the staged meeting, title and context just as
   // a live recording would.
   async function handleImport() {
-    if (stage !== 'idle') return;
+    // A ref, not `stage`: a double-click lands before the re-render, and would
+    // otherwise open a second file picker.
+    if (stage !== 'idle' || importingRef.current) return;
+    importingRef.current = true;
+    try {
+      await importFromPicker();
+    } finally {
+      importingRef.current = false;
+    }
+  }
+
+  async function importFromPicker() {
     const filePath = await window.meetingMind.selectAudioFile();
     if (!filePath) return;
 

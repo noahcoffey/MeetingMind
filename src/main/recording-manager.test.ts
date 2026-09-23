@@ -34,16 +34,18 @@ import { listRecordings, listRecordingIndex, getRecording, deleteRecording, getR
 const mockGetSetting = getSetting as jest.MockedFunction<typeof getSetting>;
 const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
 
-// Stand in for an ffmpeg run: write `output` to the output path (the last
-// argument), print `stderr`, and exit with `code`.
-function fakeFfmpeg({ code = 0, stderr = '', output = 'aac-bytes' }: { code?: number; stderr?: string; output?: string }) {
+// Stand in for ffmpeg. A transcode writes `output` to the output path (the
+// last argument), prints `stderr` and exits with `code`; a length probe of the
+// finished file (`-i` alone) prints `probeStderr` and exits 1, as ffmpeg does.
+function fakeFfmpeg({ code = 0, stderr = '', output = 'aac-bytes', probeStderr = '' }: { code?: number; stderr?: string; output?: string; probeStderr?: string }) {
   mockSpawn.mockImplementation(((_cmd: string, args: string[]) => {
     const proc: any = new EventEmitter();
     proc.stderr = new EventEmitter();
+    const isTranscode = args.includes('-c:a');
     setImmediate(() => {
-      if (code === 0) fs.writeFileSync(args[args.length - 1], output);
-      proc.stderr.emit('data', Buffer.from(stderr));
-      proc.emit('close', code);
+      if (isTranscode && code === 0) fs.writeFileSync(args[args.length - 1], output);
+      proc.stderr.emit('data', Buffer.from(isTranscode ? stderr : probeStderr));
+      proc.emit('close', isTranscode ? code : 1);
     });
     return proc;
   }) as any);
@@ -353,11 +355,19 @@ describe('recording-manager', () => {
       expect(recordingDirs()).toEqual([]);
     });
 
-    test('fails and leaves no folder behind when the length cannot be read', async () => {
-      fakeFfmpeg({ stderr: 'nothing useful' });
-      const result = await importRecording(sourcePath);
-      expect(result.success).toBe(false);
-      expect(recordingDirs()).toEqual([]);
+    test('reads the length from the finished file when the transcode does not report it', async () => {
+      fakeFfmpeg({ stderr: 'nothing useful', probeStderr: '  Duration: 00:02:00.40, start: 0.000000\n' });
+      const result = await importRecording(sourcePath, { notebook: 'Work' });
+      expect(result.success).toBe(true);
+      expect(getRecording(result.recordingId!).duration).toBe(120);
+    });
+
+    test('keeps a converted recording whose length cannot be read at all', async () => {
+      fakeFfmpeg({ stderr: 'nothing useful', probeStderr: 'nothing either' });
+      const result = await importRecording(sourcePath, { notebook: 'Work' });
+      expect(result.success).toBe(true);
+      expect(getRecording(result.recordingId!).duration).toBe(0);
+      expect(fs.existsSync(path.join(tempDir, result.recordingId!, 'audio.m4a'))).toBe(true);
     });
   });
 });

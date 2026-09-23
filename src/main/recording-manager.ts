@@ -521,6 +521,18 @@ export function parseFfmpegDuration(stderr: string): number | null {
   return null;
 }
 
+// Length of an audio file, read from ffmpeg's banner. With no output given
+// ffmpeg exits non-zero after printing it, so the exit code is ignored.
+function readAudioDuration(filePath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const proc = spawn(getFFmpegPath(), ['-nostdin', '-i', filePath]);
+    let output = '';
+    proc.stderr?.on('data', (data: Buffer) => { output += data.toString(); });
+    proc.on('close', () => resolve(parseFfmpegDuration(output)));
+    proc.on('error', () => resolve(null));
+  });
+}
+
 /**
  * Bring an audio file recorded somewhere else (a phone voice memo, a Zoom local
  * recording) in as a recording. It is transcoded the same way a live recording
@@ -575,9 +587,13 @@ export async function importRecording(filePath: string, opts: ImportOptions = {}
       throw new Error('Transcoded file is empty');
     }
 
-    const seconds = parseFfmpegDuration(stderr);
+    // The conversion worked, so a missing length is no reason to throw the
+    // audio away: ask the finished m4a (which always carries one), and failing
+    // that save it with no length rather than lose it.
+    let seconds = parseFfmpegDuration(stderr) ?? await readAudioDuration(outputPath);
     if (seconds === null) {
-      throw new Error("Couldn't determine the length of this audio");
+      log('warn', `Couldn't determine the length of imported audio ${recordingId}; saving with duration 0`);
+      seconds = 0;
     }
     const duration = Math.floor(seconds);
 
