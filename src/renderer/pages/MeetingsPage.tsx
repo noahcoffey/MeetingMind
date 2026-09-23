@@ -61,6 +61,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showCostData, setShowCostData] = useState(false);
   const [meetinghubVisible, setMeetinghubVisible] = useState(false);
+  const [userName, setUserName] = useState('');
   const [qaEntries, setQaEntries] = useState<QAEntry[]>([]);
   const [qaQuestion, setQaQuestion] = useState('');
   const [qaIsAsking, setQaIsAsking] = useState(false);
@@ -103,6 +104,26 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     window.meetingMind.getSettings().then((s: any) => {
       setShowCostData(!!s.showCostData);
       setMeetinghubVisible(!!s.meetinghubEnabled || (s.meetinghubNotebooks || []).length > 0);
+      setUserName(s.userName || '');
+    });
+
+    // The pipeline parked a recording behind the speaker gate, or Claude's
+    // guesses landed. If it's the one on screen, show the Speakers tab.
+    const unsubReviewNeeded = window.meetingMind.on('speakers:review-needed', (data: unknown) => {
+      const { recordingId } = data as { recordingId: string };
+      loadMeetings();
+      if (selectedMeetingRef.current?.id === recordingId) {
+        refreshSelectedMeeting();
+        setDetailTab('speakers');
+      }
+    });
+    const unsubSuggestions = window.meetingMind.on('speakers:suggestions', (data: unknown) => {
+      const { recordingId } = data as { recordingId: string };
+      if (selectedMeetingRef.current?.id === recordingId) refreshSelectedMeeting();
+    });
+    const unsubReviewComplete = window.meetingMind.on('speakers:review-complete', (data: unknown) => {
+      const { recordingId } = data as { recordingId: string };
+      if (selectedMeetingRef.current?.id === recordingId) refreshSelectedMeeting();
     });
 
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
@@ -141,6 +162,9 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       unsubNotesComplete();
       unsubSentiment();
       unsubMeetingHub();
+      unsubReviewNeeded();
+      unsubSuggestions();
+      unsubReviewComplete();
       window.meetingMind.removeAllListeners('notes:stream');
       window.meetingMind.removeAllListeners('qa:stream');
       window.meetingMind.removeAllListeners('qa:complete');
@@ -298,6 +322,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     const freshRec = await window.meetingMind.getRecording(rec.id);
     if (freshRec) {
       setSelectedMeeting(freshRec);
+      if (freshRec.awaitingSpeakerReview && freshRec.status === 'transcribed') setDetailTab('speakers');
 
       if (freshRec.status === 'complete' || freshRec.status === 'transcribed') {
         const notes = await window.meetingMind.getNotes(freshRec.id);
@@ -446,6 +471,18 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     if (!selectedMeeting) return;
     await window.meetingMind.renameSpeaker(selectedMeeting.id, oldName, newName);
     refreshSelectedMeeting();
+  }
+
+  async function handleSuggestSpeakerNames() {
+    if (!selectedMeeting) return;
+    const result = await window.meetingMind.identifySpeakers(selectedMeeting.id);
+    if (!result.success) showToast(`Could not identify speakers: ${result.error}`);
+    refreshSelectedMeeting();
+  }
+
+  function handleGenerateNotesFromSpeakers() {
+    setDetailTab('notes');
+    handleGenerateNotes();
   }
 
   async function handleAskQuestion() {
@@ -1277,6 +1314,21 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                 />
               )}
 
+              {/* Parked behind the speaker gate */}
+              {detailTab === 'notes' && !notesError && !isStreaming && !isLoadingNotes && !notesContent
+                && selectedMeeting.status === 'transcribed' && selectedMeeting.awaitingSpeakerReview && (
+                <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                  <div style={{ flex: 1, fontSize: 13 }}>
+                    <div style={{ fontWeight: 600, marginBottom: 2 }}>Notes are waiting on speaker names</div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                      Name the speakers so action items land on the right people, then generate.
+                    </div>
+                  </div>
+                  <button className="btn btn-ghost" onClick={() => setDetailTab('speakers')}>Name speakers</button>
+                  <button className="btn btn-primary" onClick={handleGenerateNotes} disabled={isStreaming}>Generate anyway</button>
+                </div>
+              )}
+
               {/* Notes tab */}
               {detailTab === 'notes' && !notesError && (isStreaming || isLoadingNotes || notesContent || selectedMeeting.status === 'complete') && (
                 <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
@@ -1337,6 +1389,17 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                   utterances={utterances}
                   speakerNames={selectedMeeting.speakerNames || {}}
                   onRenameSpeaker={handleRenameSpeaker}
+                  attendees={selectedMeeting.calendarEvent?.attendees || []}
+                  userName={userName}
+                  suggestions={selectedMeeting.speakerSuggestions || {}}
+                  awaitingReview={!!selectedMeeting.awaitingSpeakerReview && selectedMeeting.status === 'transcribed'}
+                  canGenerateNotes={selectedMeeting.status === 'transcribed'}
+                  isGenerating={isStreaming}
+                  onGenerateNotes={handleGenerateNotesFromSpeakers}
+                  onSuggestNames={handleSuggestSpeakerNames}
+                  onPlaySegment={selectedMeeting.audioPath ? audioControls.playRange : undefined}
+                  currentTime={audioState.currentTime}
+                  isPlaying={audioState.isPlaying}
                 />
               )}
 

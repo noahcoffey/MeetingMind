@@ -10,6 +10,7 @@ import { getRecording } from './recording-manager';
 import { autoTagRecording } from './tagger';
 import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
 import { sendToMeetingHub } from './meetinghub';
+import { clearSpeakerReview } from './speaker-review';
 
 const DEFAULT_PROMPT = `You are a professional meeting notes assistant. Based on the transcript and context below, generate structured meeting notes in Markdown format.
 
@@ -227,6 +228,10 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
     const speakerNames = recording.speakerNames || {};
     const transcript = formatTranscript(transcriptData, speakerNames);
     const prompt = buildPrompt(recording, transcript);
+
+    // Whatever started this run — the review panel, the header button, the
+    // pipeline — the speaker gate is over.
+    clearSpeakerReview(recordingId);
 
     // Update status
     updateRecordingStatus(recordingId, 'generating');

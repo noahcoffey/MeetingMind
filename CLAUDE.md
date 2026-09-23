@@ -41,6 +41,22 @@ Which meeting `select=next` stages is `src/renderer/pick-meeting.ts` (tested). A
 are skipped: an ICS all-day event is just a 24-hour span with nothing marking it, so it spans
 every "now" and otherwise wins against the meeting actually in progress.
 
+## Speaker gate (names before notes)
+
+`src/main/speaker-review.ts`. The auto pipeline in `App.tsx` calls
+`prepareSpeakersForNotes` between transcription and notes generation. Main runs a Claude
+pre-pass (`identifySpeakers`, attendee list + transcript → per-speaker guess with confidence,
+stored as `speakerSuggestions` on the manifest) and decides via `decideGate` (tested): proceed
+when the gate is off, there is one speaker, everyone is named, or every unnamed speaker got a
+high-confidence guess from the attendee list. Otherwise it sets `awaitingSpeakerReview` on the
+manifest, emits `speakers:review-needed`, and shows a macOS notification.
+
+**It is a manifest flag, not a status** — the recording stays `transcribed` so every existing
+check keeps working. `generateNotes()` clears the flag whichever button started it and emits
+`speakers:review-complete`; the MeetingHub push rides after notes, so gating notes gates the push
+(MeetingHub ingest is first-send-wins, which is why the gate sits *before* generation). Parked
+recordings are re-seeded into the pipeline widget on launch via `speakers:listAwaitingReview`.
+
 ## Bundled Python interpreter (WhisperX Local)
 
 WhisperX Local runs transcription/diarization on-device through Python. To avoid requiring users to install Python, a hermetic [python-build-standalone](https://github.com/astral-sh/python-build-standalone) CPython 3.11 is bundled inside the app — the same pattern as the bundled `ffmpeg`.

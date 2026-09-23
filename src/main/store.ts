@@ -31,6 +31,13 @@ export interface AppSettings {
   claudeModel: string;
   notesPromptTemplate: string;
   autoTranscribe: boolean;
+  // Pause the automatic pipeline after transcription until the speakers have
+  // names, so notes (and the MeetingHub push) attribute things to real people.
+  speakerReviewBeforeNotes: boolean;
+  // Ask Claude to propose who each diarized speaker is, from the attendee list
+  // and the transcript. When every speaker resolves with high confidence the
+  // review step is skipped.
+  speakerIdentifyWithClaude: boolean;
   icsCalendarUrl: string;
   icsCalendarEnabled: boolean;
   googleCalendarEnabled: boolean;
@@ -73,6 +80,8 @@ const defaults: AppSettings = {
   claudeModel: 'claude-sonnet-4-6',
   notesPromptTemplate: '',
   autoTranscribe: false,
+  speakerReviewBeforeNotes: true,
+  speakerIdentifyWithClaude: true,
   icsCalendarUrl: '',
   icsCalendarEnabled: false,
   googleCalendarEnabled: false,

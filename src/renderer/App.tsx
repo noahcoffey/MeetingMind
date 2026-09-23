@@ -35,6 +35,17 @@ export default function App() {
 
   useEffect(() => {
     loadSettings();
+    // Recordings parked behind the speaker gate when the app last quit — the
+    // pipeline is renderer-driven, so nothing else would pick them up again.
+    window.meetingMind.listAwaitingSpeakerReview().then(list => {
+      if (!list?.length) return;
+      setBackgroundJobs(prev => [
+        ...prev,
+        ...list
+          .filter(a => !prev.some(j => j.recordingId === a.recordingId))
+          .map(a => ({ recordingId: a.recordingId, title: a.title, stage: 'awaiting-speakers' as const, message: 'Name the speakers to finish' })),
+      ]);
+    }).catch(() => {});
     return () => {
       // Clean up all job listeners on unmount
       jobCleanupRef.current.forEach(cleanup => cleanup());
@@ -124,16 +135,23 @@ export default function App() {
     setBackgroundJobs(prev => [...prev, newJob]);
 
     // Set up IPC listeners scoped to this job
+    // Progress events carry no recording id, so only a job that is actually
+    // transcribing listens to them; a parked or generating job would otherwise
+    // pick up another recording's chatter.
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
       const { status, message } = data as { status: string; message: string };
       setBackgroundJobs(prev => prev.map(j =>
-        j.recordingId === recordingId
+        j.recordingId === recordingId && j.stage === 'transcribing'
           ? { ...j, message, stage: status === 'error' ? 'error' : j.stage }
           : j
       ));
     });
 
-    const unsubNotesComplete = window.meetingMind.on('notes:complete', () => {
+    const unsubNotesComplete = window.meetingMind.on('notes:complete', (data: unknown) => {
+      const { recordingId: id } = (data || {}) as { recordingId?: string };
+      // A parked job can sit for hours; notes finishing on some other meeting
+      // must not close it.
+      if (id && id !== recordingId) return;
       setBackgroundJobs(prev => prev.map(j =>
         j.recordingId === recordingId
           ? { ...j, stage: 'complete', message: 'Notes ready' }
@@ -147,10 +165,22 @@ export default function App() {
       }
     });
 
+    // The gate resolving (from any button that starts notes generation)
+    const unsubReviewComplete = window.meetingMind.on('speakers:review-complete', (data: unknown) => {
+      const { recordingId: id } = data as { recordingId: string };
+      if (id !== recordingId) return;
+      setBackgroundJobs(prev => prev.map(j =>
+        j.recordingId === recordingId && j.stage === 'awaiting-speakers'
+          ? { ...j, stage: 'generating-notes', message: 'Generating meeting notes...' }
+          : j
+      ));
+    });
+
     // Store cleanup function
     jobCleanupRef.current.set(recordingId, () => {
       unsubProgress();
       unsubNotesComplete();
+      unsubReviewComplete();
     });
 
     // Fire-and-forget the pipeline
@@ -158,6 +188,23 @@ export default function App() {
       try {
         const transcribeResult = await window.meetingMind.startTranscription(recordingId);
         if (transcribeResult.success) {
+          // Speaker gate: names first, then notes. Main decides whether the
+          // speakers are already known (or Claude can tell), and parks the
+          // recording otherwise. Notes are then started from the review UI.
+          setBackgroundJobs(prev => prev.map(j =>
+            j.recordingId === recordingId
+              ? { ...j, message: 'Checking who was speaking...' }
+              : j
+          ));
+          const gate = await window.meetingMind.prepareSpeakersForNotes(recordingId);
+          if (!gate.proceed) {
+            setBackgroundJobs(prev => prev.map(j =>
+              j.recordingId === recordingId
+                ? { ...j, stage: 'awaiting-speakers', message: 'Name the speakers to finish' }
+                : j
+            ));
+            return;
+          }
           setBackgroundJobs(prev => prev.map(j =>
             j.recordingId === recordingId
               ? { ...j, stage: 'generating-notes', message: 'Generating meeting notes...' }
@@ -198,6 +245,34 @@ export default function App() {
     });
     return unsub;
   }, [handleRecordingSaved]);
+
+  // Jobs re-seeded on launch have no per-job listeners, so finish them here.
+  useEffect(() => {
+    const unsubReview = window.meetingMind.on('speakers:review-complete', (data: unknown) => {
+      const { recordingId } = data as { recordingId: string };
+      setBackgroundJobs(prev => prev.map(j =>
+        j.recordingId === recordingId && j.stage === 'awaiting-speakers'
+          ? { ...j, stage: 'generating-notes', message: 'Generating meeting notes...' }
+          : j
+      ));
+    });
+    const unsubNotes = window.meetingMind.on('notes:complete', (data: unknown) => {
+      const { recordingId } = (data || {}) as { recordingId?: string };
+      if (!recordingId) return;
+      setBackgroundJobs(prev => prev.map(j =>
+        j.recordingId === recordingId && j.stage === 'generating-notes' && !jobCleanupRef.current.has(recordingId)
+          ? { ...j, stage: 'complete', message: 'Notes ready' }
+          : j
+      ));
+    });
+    // The macOS notification for a parked recording was clicked.
+    const unsubOpen = window.meetingMind.on('speakers:open-review', (data: unknown) => {
+      const { recordingId } = data as { recordingId: string };
+      setViewRecordingId(recordingId);
+      setCurrentPage('meetings');
+    });
+    return () => { unsubReview(); unsubNotes(); unsubOpen(); };
+  }, []);
 
   // The control server asking for the Record page, optionally with the meeting
   // that is happening now (or about to) already staged.

@@ -23,6 +23,7 @@ import {
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyzeSentiment } from './notes-generator';
 import { sendToMeetingHub, getMeetingHubActivity, clearMeetingHubActivity } from './meetinghub';
+import { prepareSpeakerReview, identifySpeakers, listAwaitingReview } from './speaker-review';
 import { getCalendarEvents, invalidateCalendarCache, connectGoogle, connectMicrosoft, disconnectCalendar } from './calendar';
 import { listSystemAudioDevices } from './system-audio';
 import { copyNotesToClipboard, exportNotesAsPDF, emailNotes, copyTranscriptToClipboard, exportTranscriptAsMarkdown } from './export';
@@ -303,7 +304,9 @@ export function setupIpcHandlers(): void {
     if (fs.existsSync(manifestPath)) {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
       if (!manifest.speakerNames) manifest.speakerNames = {};
-      manifest.speakerNames[oldName] = newName;
+      // Renaming a speaker back to its own label clears it.
+      if (newName.trim() === oldName || /^Speaker \d+$/i.test(newName.trim())) delete manifest.speakerNames[oldName];
+      else manifest.speakerNames[oldName] = newName.trim();
       fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
       // Add to global speaker directory if not already present
@@ -325,6 +328,19 @@ export function setupIpcHandlers(): void {
   // Speaker directory
   ipcMain.handle('speakers:getDirectory', async () => {
     return getSetting('speakerDirectory') || [];
+  });
+
+  // Speaker review gate (see speaker-review.ts)
+  ipcMain.handle('speakers:prepareForNotes', async (_event, recordingId: string) => {
+    return prepareSpeakerReview(recordingId);
+  });
+
+  ipcMain.handle('speakers:identify', async (_event, recordingId: string) => {
+    return identifySpeakers(recordingId);
+  });
+
+  ipcMain.handle('speakers:listAwaitingReview', async () => {
+    return listAwaitingReview();
   });
 
   // Rename recording title

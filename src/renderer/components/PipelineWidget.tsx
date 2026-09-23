@@ -3,7 +3,7 @@ import React from 'react';
 export interface BackgroundJob {
   recordingId: string;
   title: string;
-  stage: 'transcribing' | 'generating-notes' | 'complete' | 'error';
+  stage: 'transcribing' | 'awaiting-speakers' | 'generating-notes' | 'complete' | 'error';
   message: string;
 }
 
@@ -76,6 +76,28 @@ export default function PipelineWidget({ jobs, onViewRecording, onDismiss }: Pip
                 }}
               >
                 &times;
+              </button>
+            </div>
+          ) : job.stage === 'awaiting-speakers' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-yellow)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              <span style={{ color: 'var(--accent-yellow)', fontWeight: 500, flex: 1 }}>Who was speaking?</span>
+              <button
+                onClick={() => onViewRecording(job.recordingId)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--accent-blue)',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  padding: '0 2px',
+                }}
+              >
+                Review
               </button>
             </div>
           ) : job.stage === 'error' ? (

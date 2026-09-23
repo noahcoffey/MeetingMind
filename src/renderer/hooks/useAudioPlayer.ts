@@ -12,6 +12,8 @@ interface AudioPlayerControls {
   pause: () => void;
   toggle: () => void;
   seek: (time: number) => void;
+  /** Play from start to end (seconds), then pause. For "listen to this speaker". */
+  playRange: (start: number, end: number) => void;
   setRate: (rate: number) => void;
   load: (src: string) => void;
 }
@@ -19,6 +21,8 @@ interface AudioPlayerControls {
 export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const animRef = useRef<number>(0);
+  // When set, playback pauses itself on reaching this time (seconds).
+  const stopAtRef = useRef<number | null>(null);
 
   const [state, setState] = useState<AudioPlayerState>({
     isPlaying: false,
@@ -30,9 +34,16 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
   // Animation-frame–based time tracking for smooth updates
   const tick = useCallback(() => {
     if (audioRef.current && !audioRef.current.paused) {
+      const now = audioRef.current.currentTime;
+      if (stopAtRef.current !== null && now >= stopAtRef.current) {
+        stopAtRef.current = null;
+        audioRef.current.pause();
+        setState(prev => ({ ...prev, currentTime: now, isPlaying: false }));
+        return;
+      }
       setState(prev => ({
         ...prev,
-        currentTime: audioRef.current!.currentTime,
+        currentTime: now,
       }));
       animRef.current = requestAnimationFrame(tick);
     }
@@ -108,6 +119,7 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
 
   const toggle = useCallback(() => {
     if (!audioRef.current) return;
+    stopAtRef.current = null;
     if (audioRef.current.paused) {
       audioRef.current.play().catch(err => {
         console.error('Audio play failed:', err);
@@ -120,6 +132,7 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
   const seek = useCallback((time: number) => {
     const audio = audioRef.current;
     if (!audio) return;
+    stopAtRef.current = null;
     console.log('Seeking to:', time, 'duration:', audio.duration, 'readyState:', audio.readyState);
     // readyState must be >= HAVE_METADATA (1) to seek
     if (audio.readyState >= 1) {
@@ -144,10 +157,27 @@ export function useAudioPlayer(): [AudioPlayerState, AudioPlayerControls] {
     }
   }, []);
 
+  const playRange = useCallback((start: number, end: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const begin = () => {
+      stopAtRef.current = end > start ? end : null;
+      audio.currentTime = start;
+      setState(prev => ({ ...prev, currentTime: start }));
+      audio.play().catch(err => console.error('Audio play (range) failed:', err));
+    };
+    if (audio.readyState >= 1) {
+      begin();
+    } else {
+      const onReady = () => { audio.removeEventListener('loadedmetadata', onReady); begin(); };
+      audio.addEventListener('loadedmetadata', onReady);
+    }
+  }, []);
+
   const setRate = useCallback((rate: number) => {
     if (audioRef.current) audioRef.current.playbackRate = rate;
     setState(prev => ({ ...prev, playbackRate: rate }));
   }, []);
 
-  return [state, { play, pause, toggle, seek, setRate, load }];
+  return [state, { play, pause, toggle, seek, playRange, setRate, load }];
 }

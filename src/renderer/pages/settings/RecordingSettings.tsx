@@ -235,6 +235,29 @@ export default function RecordingSettings({
         />
         Auto-transcribe after recording stops
       </label>
+      <label className="form-label settings-toggle" style={{ marginLeft: 24 }}>
+        <input
+          type="checkbox"
+          checked={settings.speakerReviewBeforeNotes !== false}
+          onChange={e => updateSetting('speakerReviewBeforeNotes', e.target.checked)}
+          disabled={!settings.autoTranscribe}
+        />
+        Pause for speaker names before generating notes
+      </label>
+      <div className="form-hint" style={{ marginLeft: 24, marginTop: -4, marginBottom: 8 }}>
+        Notes and action items get attributed to real people instead of "Speaker 2". Skipped when there is only one speaker or every speaker is already identified.
+      </div>
+      <label className="form-label settings-toggle" style={{ marginLeft: 24 }}>
+        <input
+          type="checkbox"
+          checked={settings.speakerIdentifyWithClaude !== false}
+          onChange={e => updateSetting('speakerIdentifyWithClaude', e.target.checked)}
+        />
+        Let Claude suggest who each speaker is
+      </label>
+      <div className="form-hint" style={{ marginLeft: 24, marginTop: -4, marginBottom: 8 }}>
+        Uses the calendar attendee list and the transcript. Confident matches are applied automatically; when every speaker is matched, the pause is skipped.
+      </div>
       <label className="form-label settings-toggle">
         <input
           type="checkbox"

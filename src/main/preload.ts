@@ -73,6 +73,9 @@ const api = {
   renameSpeaker: (recordingId: string, oldName: string, newName: string) =>
     ipcRenderer.invoke('speakers:rename', recordingId, oldName, newName),
   getSpeakerDirectory: () => ipcRenderer.invoke('speakers:getDirectory'),
+  prepareSpeakersForNotes: (recordingId: string) => ipcRenderer.invoke('speakers:prepareForNotes', recordingId),
+  identifySpeakers: (recordingId: string) => ipcRenderer.invoke('speakers:identify', recordingId),
+  listAwaitingSpeakerReview: () => ipcRenderer.invoke('speakers:listAwaitingReview'),
 
   // Export
   copyNotesToClipboard: (recordingId: string) => ipcRenderer.invoke('export:clipboard', recordingId),
@@ -157,6 +160,10 @@ const api = {
       'project-summary:complete',
       'meetinghub:status',
       'meetinghub:activity',
+      'speakers:review-needed',
+      'speakers:review-complete',
+      'speakers:open-review',
+      'speakers:suggestions',
     ];
     if (validChannels.includes(channel)) {
       const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => callback(...args);
