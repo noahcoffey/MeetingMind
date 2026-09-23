@@ -22,10 +22,32 @@ jest.mock('./store', () => ({
   getSetting: jest.fn(() => ''),
 }));
 
+jest.mock('child_process', () => ({
+  spawn: jest.fn(),
+}));
+
+import { EventEmitter } from 'events';
+import { spawn } from 'child_process';
 import { getSetting } from './store';
-import { listRecordings, listRecordingIndex, getRecording, deleteRecording, getRecordingStatus, isPathInsideRecordingsDir } from './recording-manager';
+import { listRecordings, listRecordingIndex, getRecording, deleteRecording, getRecordingStatus, isPathInsideRecordingsDir, importRecording, parseFfmpegDuration } from './recording-manager';
 
 const mockGetSetting = getSetting as jest.MockedFunction<typeof getSetting>;
+const mockSpawn = spawn as jest.MockedFunction<typeof spawn>;
+
+// Stand in for an ffmpeg run: write `output` to the output path (the last
+// argument), print `stderr`, and exit with `code`.
+function fakeFfmpeg({ code = 0, stderr = '', output = 'aac-bytes' }: { code?: number; stderr?: string; output?: string }) {
+  mockSpawn.mockImplementation(((_cmd: string, args: string[]) => {
+    const proc: any = new EventEmitter();
+    proc.stderr = new EventEmitter();
+    setImmediate(() => {
+      if (code === 0) fs.writeFileSync(args[args.length - 1], output);
+      proc.stderr.emit('data', Buffer.from(stderr));
+      proc.emit('close', code);
+    });
+    return proc;
+  }) as any);
+}
 
 describe('recording-manager', () => {
   let tempDir: string;
@@ -240,6 +262,108 @@ describe('recording-manager', () => {
       const os = require('os');
       const defaultDir = path.join(os.homedir(), 'Documents', 'MeetingMind', 'recordings');
       expect(isPathInsideRecordingsDir(path.join(defaultDir, 'rec-1', 'audio.m4a'))).toBe(true);
+    });
+  });
+
+  describe('parseFfmpegDuration', () => {
+    test('reads the input banner duration', () => {
+      const stderr = "Input #0, mp3, from 'memo.mp3':\n  Duration: 01:02:03.50, start: 0.000000, bitrate: 128 kb/s\n";
+      expect(parseFfmpegDuration(stderr)).toBeCloseTo(3723.5);
+    });
+
+    test('falls back to the last progress time when the banner has none', () => {
+      const stderr = '  Duration: N/A, bitrate: N/A\nsize=1kB time=00:00:10.00 bitrate=1k\rsize=2kB time=00:01:05.25 bitrate=1k\n';
+      expect(parseFfmpegDuration(stderr)).toBeCloseTo(65.25);
+    });
+
+    test('returns null when there is nothing to read', () => {
+      expect(parseFfmpegDuration('garbage')).toBeNull();
+    });
+  });
+
+  describe('importRecording', () => {
+    let sourcePath: string;
+
+    beforeEach(() => {
+      mockSpawn.mockReset();
+      sourcePath = path.join(os.tmpdir(), `mm-import-src-${process.pid}.mp3`);
+      fs.writeFileSync(sourcePath, 'fake mp3');
+    });
+
+    afterEach(() => {
+      fs.rmSync(sourcePath, { force: true });
+    });
+
+    function recordingDirs() {
+      return fs.readdirSync(tempDir);
+    }
+
+    test('writes a recorded manifest marked as an import', async () => {
+      fakeFfmpeg({ stderr: '  Duration: 00:45:30.80, start: 0.000000\n' });
+
+      const result = await importRecording(sourcePath, {
+        title: 'Standup',
+        calendarEventId: 'evt-1',
+        calendarEventProvider: 'google',
+        userContext: 'Weekly sync',
+        notebook: 'Work',
+      });
+
+      expect(result.success).toBe(true);
+      const manifest = getRecording(result.recordingId!);
+      expect(manifest).toMatchObject({
+        id: result.recordingId,
+        title: 'Standup',
+        duration: 2730,
+        fileSize: 'aac-bytes'.length,
+        audioPath: path.join(tempDir, result.recordingId!, 'audio.m4a'),
+        status: 'recorded',
+        calendarEventId: 'evt-1',
+        calendarEventProvider: 'google',
+        userContext: 'Weekly sync',
+        notebook: 'Work',
+        speakerNames: {},
+        source: 'import',
+      });
+
+      // Transcoded with the same settings as a live recording's merge.
+      const args = mockSpawn.mock.calls[0][1] as string[];
+      expect(args).toEqual(expect.arrayContaining(['-i', sourcePath, '-vn', '-af', 'highpass=f=80,afftdn=nf=-25', '-c:a', 'aac', '-b:a', '64k', '-ac', '1']));
+    });
+
+    test('titles an untitled import after the file', async () => {
+      fakeFfmpeg({ stderr: '  Duration: 00:00:05.00\n' });
+      const result = await importRecording(sourcePath, { notebook: 'Work' });
+      expect(getRecording(result.recordingId!).title).toBe(path.basename(sourcePath, '.mp3'));
+    });
+
+    test('fails without calling ffmpeg when the file does not exist', async () => {
+      const result = await importRecording(path.join(tempDir, 'missing.mp3'));
+      expect(result.success).toBe(false);
+      expect(mockSpawn).not.toHaveBeenCalled();
+      expect(recordingDirs()).toEqual([]);
+    });
+
+    test('fails and leaves no folder behind when ffmpeg cannot decode the file', async () => {
+      fakeFfmpeg({ code: 1, stderr: 'memo.mp3: Invalid data found when processing input\n' });
+      const result = await importRecording(sourcePath);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid data found');
+      expect(recordingDirs()).toEqual([]);
+    });
+
+    test('fails and leaves no folder behind when the transcode is empty', async () => {
+      fakeFfmpeg({ stderr: '  Duration: 00:00:05.00\n', output: '' });
+      const result = await importRecording(sourcePath);
+      expect(result.success).toBe(false);
+      expect(recordingDirs()).toEqual([]);
+    });
+
+    test('fails and leaves no folder behind when the length cannot be read', async () => {
+      fakeFfmpeg({ stderr: 'nothing useful' });
+      const result = await importRecording(sourcePath);
+      expect(result.success).toBe(false);
+      expect(recordingDirs()).toEqual([]);
     });
   });
 });
