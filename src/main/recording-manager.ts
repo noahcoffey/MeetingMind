@@ -497,6 +497,117 @@ export async function stopRecording(): Promise<{ success: boolean; recordingId?:
   }
 }
 
+export interface ImportOptions {
+  title?: string;
+  calendarEventId?: string;
+  calendarEventProvider?: string;
+  userContext?: string;
+  notebook?: string;
+}
+
+// Read an audio length out of ffmpeg's stderr, in seconds. The input banner's
+// `Duration:` is the source file's own length; some containers (raw AAC/ADTS,
+// some Ogg) report N/A there, so the last progress `time=` — how much audio was
+// actually decoded — is the fallback. No ffprobe: only ffmpeg is bundled.
+export function parseFfmpegDuration(stderr: string): number | null {
+  const toSeconds = (h: string, m: string, s: string) => Number(h) * 3600 + Number(m) * 60 + Number(s);
+  const header = stderr.match(/Duration: (\d+):(\d{2}):(\d{2}(?:\.\d+)?)/);
+  if (header) return toSeconds(header[1], header[2], header[3]);
+  const progress = [...stderr.matchAll(/time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/g)];
+  if (progress.length) {
+    const last = progress[progress.length - 1];
+    return toSeconds(last[1], last[2], last[3]);
+  }
+  return null;
+}
+
+/**
+ * Bring an audio file recorded somewhere else (a phone voice memo, a Zoom local
+ * recording) in as a recording. It is transcoded the same way a live recording
+ * is merged, so everything downstream sees the usual mono AAC `audio.m4a`. On
+ * any failure the new recording folder is removed again.
+ */
+export async function importRecording(filePath: string, opts: ImportOptions = {}): Promise<{ success: boolean; recordingId?: string; error?: string }> {
+  try {
+    if (!filePath || !fs.statSync(filePath).isFile()) {
+      return { success: false, error: 'File not found' };
+    }
+  } catch {
+    return { success: false, error: 'File not found' };
+  }
+
+  const recordingId = crypto.randomUUID();
+  const outputDir = path.join(getOutputDir(), recordingId);
+  const outputPath = path.join(outputDir, 'audio.m4a');
+
+  try {
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    const stderr = await new Promise<string>((resolve, reject) => {
+      // -vn: phone and Zoom files often carry cover art as a video stream,
+      // which the m4a muxer would otherwise try to take along.
+      const proc = spawn(getFFmpegPath(), [
+        '-nostdin',
+        '-i', filePath,
+        '-vn',
+        '-af', 'highpass=f=80,afftdn=nf=-25',
+        '-c:a', 'aac',
+        '-b:a', '64k',
+        '-ac', '1',
+        '-y',
+        outputPath,
+      ]);
+      let output = '';
+      proc.stderr?.on('data', (data: Buffer) => { output += data.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve(output);
+        } else {
+          const detail = output.trim().split('\n').pop() || `ffmpeg exited with code ${code}`;
+          reject(new Error(`Couldn't read this file as audio (${detail.trim()})`));
+        }
+      });
+      proc.on('error', reject);
+    });
+
+    const stats = fs.statSync(outputPath);
+    if (stats.size === 0) {
+      throw new Error('Transcoded file is empty');
+    }
+
+    const seconds = parseFfmpegDuration(stderr);
+    if (seconds === null) {
+      throw new Error("Couldn't determine the length of this audio");
+    }
+    const duration = Math.floor(seconds);
+
+    const manifest = {
+      id: recordingId,
+      title: opts.title || path.basename(filePath, path.extname(filePath)),
+      date: new Date().toISOString(),
+      duration,
+      fileSize: stats.size,
+      audioPath: outputPath,
+      status: 'recorded' as const,
+      calendarEventId: opts.calendarEventId,
+      calendarEventProvider: opts.calendarEventProvider,
+      userContext: opts.userContext,
+      notebook: opts.notebook || getSetting('activeNotebook') || 'Personal',
+      speakerNames: {},
+      source: 'import' as const,
+    };
+
+    writeJsonAtomic(path.join(outputDir, 'manifest.json'), manifest);
+
+    log('info', `Recording imported: ${recordingId}`, { source: path.basename(filePath), duration, fileSize: stats.size });
+    return { success: true, recordingId };
+  } catch (err) {
+    log('error', 'Failed to import recording', err);
+    try { fs.rmSync(outputDir, { recursive: true, force: true }); } catch {}
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function mergeChunks(tempDir: string, chunks: string[], outputPath: string): Promise<void> {
   const ffmpegPath = getFFmpegPath();
 

@@ -16,6 +16,8 @@ import {
   isPathInsideRecordingsDir,
   listRecordingIndex,
   type MsRange,
+  importRecording,
+  type ImportOptions,
 } from './recording-manager';
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyzeSentiment } from './notes-generator';
@@ -110,6 +112,15 @@ export function setupIpcHandlers(): void {
     return result.filePaths[0];
   });
 
+  ipcMain.handle('file:selectAudioFile', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Audio', extensions: ['m4a', 'mp3', 'wav', 'aac', 'flac', 'ogg'] }],
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0];
+  });
+
   // Audio devices
   ipcMain.handle('audio:getDevices', async () => {
     return []; // Handled in renderer via navigator.mediaDevices
@@ -131,6 +142,10 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle('recording:stop', async () => {
     return stopRecording();
+  });
+
+  ipcMain.handle('recording:import', async (_event, filePath: string, opts?: ImportOptions) => {
+    return importRecording(filePath, opts);
   });
 
   ipcMain.handle('recording:cancel', async () => {

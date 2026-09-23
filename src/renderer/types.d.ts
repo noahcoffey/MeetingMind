@@ -14,6 +14,7 @@ export interface MeetingMindAPI {
   getSystemAudioDevices: () => Promise<AudioDevice[]>;
   startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string) => Promise<{ success: boolean; error?: string }>;
   stopRecording: () => Promise<{ success: boolean; error?: string; recordingId?: string }>;
+  importRecording: (filePath: string, opts?: { title?: string; calendarEventId?: string; calendarEventProvider?: string; userContext?: string; notebook?: string }) => Promise<{ success: boolean; error?: string; recordingId?: string }>;
   cancelRecording: () => Promise<{ success: boolean; error?: string }>;
   pauseRecording: () => Promise<{ success: boolean; error?: string }>;
   resumeRecording: () => Promise<{ success: boolean; error?: string }>;
@@ -67,6 +68,7 @@ export interface MeetingMindAPI {
   openInFinder: (filePath: string) => Promise<void>;
   openInObsidian: (vaultName: string, filePath: string) => Promise<void>;
   selectFolder: () => Promise<string | null>;
+  selectAudioFile: () => Promise<string | null>;
   openExternal: (url: string) => Promise<void>;
   on: (channel: string, callback: (...args: unknown[]) => void) => () => void;
   removeAllListeners: (channel: string) => void;
@@ -99,6 +101,8 @@ export interface Recording {
   calendarEventId?: string;
   calendarEventProvider?: 'google' | 'microsoft' | 'ics';
   userContext?: string;
+  /** How the recording was made. Absent on older recordings, which were all live. */
+  source?: 'live' | 'import';
   meetinghub?: {
     status: 'sent' | 'pending' | 'skipped' | 'error';
     at: string;

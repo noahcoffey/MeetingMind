@@ -20,6 +20,7 @@ const api = {
   // Recording
   startRecording: (deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string) => ipcRenderer.invoke('recording:start', deviceId, systemAudioDeviceId, calendarEventId, userContext, title, notebook, calendarEventProvider),
   stopRecording: () => ipcRenderer.invoke('recording:stop'),
+  importRecording: (filePath: string, opts?: { title?: string; calendarEventId?: string; calendarEventProvider?: string; userContext?: string; notebook?: string }) => ipcRenderer.invoke('recording:import', filePath, opts),
   cancelRecording: () => ipcRenderer.invoke('recording:cancel'),
   pauseRecording: () => ipcRenderer.invoke('recording:pause'),
   resumeRecording: () => ipcRenderer.invoke('recording:resume'),
@@ -106,6 +107,7 @@ const api = {
   openInObsidian: (vaultName: string, filePath: string) =>
     ipcRenderer.invoke('file:openInObsidian', vaultName, filePath),
   selectFolder: () => ipcRenderer.invoke('file:selectFolder'),
+  selectAudioFile: () => ipcRenderer.invoke('file:selectAudioFile'),
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   // Meeting Q&A
