@@ -777,6 +777,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                       <div className="meeting-item-title">{rec.title || 'Untitled Meeting'}</div>
                       <div className="meeting-item-meta">
                         {new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &middot; {formatDuration(rec.duration)} &middot; {formatFileSize(rec.fileSize)}
+                        {rec.source === 'import' && <ImportedBadge />}
                       </div>
                       {rec.tags && rec.tags.length > 0 && (
                         <div style={{ display: 'flex', gap: 3, marginTop: 4, flexWrap: 'wrap' }}>
@@ -892,6 +893,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                       <span className={`status-badge ${selectedMeeting.status}`} style={{ marginLeft: 8 }}>
                         {getStatusLabel(selectedMeeting.status)}
                       </span>
+                      {selectedMeeting.source === 'import' && <ImportedBadge />}
                       {selectedMeeting.audioNormalization && (
                         <span
                           title={`Audio normalized (${selectedMeeting.audioNormalization.method})${
@@ -1733,6 +1735,27 @@ function StatusIcon({ ready, activeColor, tooltip, children }: {
           {tooltip}
         </span>
       )}
+    </span>
+  );
+}
+
+// Marks a recording brought in from an audio file rather than recorded here.
+function ImportedBadge() {
+  return (
+    <span
+      title="Imported from an audio file"
+      style={{
+        marginLeft: 6,
+        padding: '1px 6px',
+        background: 'var(--bg-input)',
+        color: 'var(--text-secondary)',
+        border: '1px solid var(--border-primary)',
+        borderRadius: 8,
+        fontSize: 10,
+        verticalAlign: 'middle',
+      }}
+    >
+      Imported
     </span>
   );
 }

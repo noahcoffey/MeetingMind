@@ -403,27 +403,7 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
       const result = await window.meetingMind.stopRecording();
 
       if (result.success && result.recordingId) {
-        setCompletedRecordingId(result.recordingId);
-
-        const rec = await window.meetingMind.getRecording(result.recordingId);
-        if (rec) {
-          setRecordingResult({ duration: rec.duration, fileSize: rec.fileSize });
-        }
-
-        setStage('complete');
-        setPipelineMessage('Recording saved!');
-
-        // Clear the staged meeting context so the NEXT recording starts clean.
-        // Otherwise a selected calendar event (and its iCal UID) silently carries
-        // over to an unrelated follow-up recording — which mis-attributes it to
-        // the wrong meeting when synced to MeetingHub.
-        setSelectedEvent(null);
-        setMeetingTitle('');
-        setUserContext('');
-
-        if (onRecordingSaved) {
-          onRecordingSaved(result.recordingId);
-        }
+        await finishSavedRecording(result.recordingId, 'Recording saved!');
       } else {
         setStage('idle');
         setPipelineMessage(`Recording failed: ${result.error}`);
@@ -461,6 +441,61 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
         setStage('idle');
         setPipelineMessage(`Failed to start: ${result.error}`);
       }
+    }
+  }
+
+  // A recording has landed on disk, recorded here or imported: show it on the
+  // finished card and hand it to the transcription pipeline.
+  async function finishSavedRecording(recordingId: string, message: string) {
+    setCompletedRecordingId(recordingId);
+
+    const rec = await window.meetingMind.getRecording(recordingId);
+    if (rec) {
+      setRecordingResult({ duration: rec.duration, fileSize: rec.fileSize });
+    }
+
+    setStage('complete');
+    setPipelineMessage(message);
+
+    // Clear the staged meeting context so the NEXT recording starts clean.
+    // Otherwise a selected calendar event (and its iCal UID) silently carries
+    // over to an unrelated follow-up recording — which mis-attributes it to
+    // the wrong meeting when synced to MeetingHub.
+    setSelectedEvent(null);
+    setMeetingTitle('');
+    setUserContext('');
+
+    if (onRecordingSaved) {
+      onRecordingSaved(recordingId);
+    }
+  }
+
+  // Bring in audio recorded elsewhere (a voice memo, a Zoom recording) instead
+  // of recording here. It takes the staged meeting, title and context just as
+  // a live recording would.
+  async function handleImport() {
+    if (stage !== 'idle') return;
+    const filePath = await window.meetingMind.selectAudioFile();
+    if (!filePath) return;
+
+    setStage('merging');
+    setCompletedRecordingId(null);
+    setRecordingResult(null);
+    setPipelineMessage('Importing audio and applying noise filter...');
+
+    const result = await window.meetingMind.importRecording(filePath, {
+      title: meetingTitle || undefined,
+      calendarEventId: selectedEvent?.id,
+      calendarEventProvider: selectedEvent?.provider,
+      userContext: userContext || undefined,
+      notebook: activeNotebook || undefined,
+    });
+
+    if (result.success && result.recordingId) {
+      await finishSavedRecording(result.recordingId, 'Recording imported!');
+    } else {
+      setStage('idle');
+      setPipelineMessage(`Import failed: ${result.error}`);
     }
   }
 
@@ -728,6 +763,20 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                   title="Start Recording"
                 >
                   <div className="record-inner" />
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={handleImport}
+                  disabled={isProcessing}
+                  title="Import an audio file recorded somewhere else"
+                  style={{ fontSize: 12, padding: '5px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  Import a recording
                 </button>
               </div>
 
