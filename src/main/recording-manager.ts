@@ -583,7 +583,7 @@ export async function importRecording(filePath: string, opts: ImportOptions = {}
 
     const manifest = {
       id: recordingId,
-      title: opts.title || path.basename(filePath, path.extname(filePath)),
+      title: opts.title || '',
       date: new Date().toISOString(),
       duration,
       fileSize: stats.size,

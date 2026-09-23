@@ -331,12 +331,6 @@ describe('recording-manager', () => {
       expect(args).toEqual(expect.arrayContaining(['-i', sourcePath, '-vn', '-af', 'highpass=f=80,afftdn=nf=-25', '-c:a', 'aac', '-b:a', '64k', '-ac', '1']));
     });
 
-    test('titles an untitled import after the file', async () => {
-      fakeFfmpeg({ stderr: '  Duration: 00:00:05.00\n' });
-      const result = await importRecording(sourcePath, { notebook: 'Work' });
-      expect(getRecording(result.recordingId!).title).toBe(path.basename(sourcePath, '.mp3'));
-    });
-
     test('fails without calling ffmpeg when the file does not exist', async () => {
       const result = await importRecording(path.join(tempDir, 'missing.mp3'));
       expect(result.success).toBe(false);
