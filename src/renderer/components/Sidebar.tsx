@@ -8,6 +8,7 @@ interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
   backgroundJobs: BackgroundJob[];
+  recordingState?: { recording: boolean; paused: boolean };
   onViewJobRecording: (recordingId: string) => void;
   onDismissJob: (recordingId: string) => void;
   notebooks: string[];
@@ -24,7 +25,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  currentPage, onNavigate, backgroundJobs, onViewJobRecording, onDismissJob,
+  currentPage, onNavigate, backgroundJobs, recordingState, onViewJobRecording, onDismissJob,
   notebooks, activeNotebook, onNotebookChange, onNotebooksUpdate,
   projects = [], activeProjectFilter, onProjectSelect, onProjectCreate,
   onProjectRename, onProjectDelete, onRecordingDroppedOnProject,
@@ -301,6 +302,15 @@ export default function Sidebar({
             <circle cx="12" cy="12" r="4" fill="currentColor" />
           </svg>
           Record
+          {recordingState?.recording && (
+            <span
+              className={`sidebar-rec-badge ${recordingState.paused ? 'paused' : ''}`}
+              title={recordingState.paused ? 'Recording paused' : 'Recording in progress'}
+            >
+              <span className="sidebar-rec-dot" />
+              {recordingState.paused ? 'Paused' : 'Rec'}
+            </span>
+          )}
         </button>
 
         <button

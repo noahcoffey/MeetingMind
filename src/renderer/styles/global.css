@@ -671,6 +671,35 @@ body {
   flex-shrink: 0;
 }
 
+/* A recording is running — visible from any page */
+.sidebar-rec-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-primary);
+}
+
+.sidebar-rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.sidebar-rec-badge.paused {
+  color: var(--accent-yellow);
+}
+
+.sidebar-rec-badge.paused .sidebar-rec-dot {
+  animation: none;
+}
+
 /* Projects section */
 .sidebar-projects-section {
   padding: 4px 8px;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { pickCurrentMeeting } from '../pick-meeting';
+import { timerRefsFromStatus } from '../resume-recording';
 
 interface RecordPageProps {
   onRecordingComplete?: (recordingId: string) => void;
@@ -10,11 +11,17 @@ interface RecordPageProps {
   selectNextSignal?: number;
   /** Bumped when something outside the page presses Record for you. */
   startRecordingSignal?: number;
+  /** Whether the page is the one on screen. It stays mounted while you look at
+   *  other pages so a recording in progress keeps its timer, meter and controls. */
+  active?: boolean;
+  /** Told whenever a recording starts, stops, pauses or resumes, so the rest of
+   *  the app can show that one is running. */
+  onRecordingStateChange?: (state: { recording: boolean; paused: boolean }) => void;
 }
 
 type PipelineStage = 'idle' | 'recording' | 'stopping' | 'merging' | 'complete';
 
-export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook, selectNextSignal, startRecordingSignal }: RecordPageProps) {
+export default function RecordPage({ onRecordingComplete, onRecordingSaved, activeNotebook, selectNextSignal, startRecordingSignal, active = true, onRecordingStateChange }: RecordPageProps) {
   const [stage, setStage] = useState<PipelineStage>('idle');
   const [duration, setDuration] = useState(0);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -52,12 +59,18 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
   const hasCalendar = calendarEvents.length > 0;
   const isRecording = stage === 'recording';
   const isProcessing = stage === 'stopping' || stage === 'merging';
+  const stageRef = useRef<PipelineStage>(stage);
+  stageRef.current = stage;
+  // The staged meeting of a recording picked back up from main, waiting for
+  // the calendar to load so the full event can take its place.
+  const resumedEventIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     loadDevices();
     loadSystemAudioDevices();
     loadCalendarEvents();
     setupListeners();
+    resumeActiveRecording();
 
     return () => {
       cleanupListeners();
@@ -65,6 +78,36 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
       stopAudioLevelMonitor();
     };
   }, []);
+
+  useEffect(() => {
+    onRecordingStateChange?.({ recording: stage === 'recording', paused: stage === 'recording' && isPaused });
+  }, [stage, isPaused]);
+
+  // Coming back to the page: refresh what may have gone stale while it was out
+  // of sight. A "Recording saved!" card is for the moment the recording ends —
+  // coming back to it later means starting over, as it always has.
+  const wasActiveRef = useRef(active);
+  useEffect(() => {
+    if (active === wasActiveRef.current) return;
+    wasActiveRef.current = active;
+    if (!active) return;
+    loadCalendarEvents();
+    loadSystemAudioDevices();
+    if (stageRef.current === 'complete') handleReset();
+  }, [active]);
+
+  useEffect(() => {
+    const id = resumedEventIdRef.current;
+    if (!id) return;
+    if (stageRef.current !== 'recording') {
+      resumedEventIdRef.current = null;
+      return;
+    }
+    const event = calendarEvents.find(e => e.id === id);
+    if (!event) return;
+    resumedEventIdRef.current = null;
+    setSelectedEvent(event);
+  }, [calendarEvents]);
 
   useEffect(() => {
     if (nextMeetingRef.current) {
@@ -122,6 +165,49 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
     observer.observe(container);
     return () => observer.disconnect();
   });
+
+  // Main owns the recording; this page only drives it. If one is already
+  // running when the page mounts (the renderer reloaded, or the page was
+  // remounted), take it back up rather than showing Ready to Record over it.
+  async function resumeActiveRecording() {
+    let status: Awaited<ReturnType<typeof window.meetingMind.getRecordingStatus>> | null = null;
+    try {
+      status = await window.meetingMind.getRecordingStatus();
+    } catch {}
+    if (!status?.recording) return;
+    // The page started (or finished) a recording of its own in the meantime.
+    if (stageRef.current !== 'idle') return;
+
+    const refs = timerRefsFromStatus(status.duration, status.isPaused, Date.now());
+    startTimeRef.current = refs.startTime;
+    pausedDurationRef.current = refs.pausedDuration;
+    pauseStartRef.current = refs.pauseStart;
+
+    setStage('recording');
+    setDuration(status.duration);
+    setChunkCount(status.chunkCount);
+    setIsPaused(status.isPaused);
+    setCompletedRecordingId(null);
+    setRecordingResult(null);
+    setPipelineMessage('');
+    setMeetingTitle(status.title || '');
+    setUserContext(status.userContext || '');
+    if (status.inputDevice) setSelectedDevice(status.inputDevice);
+    if (status.systemAudioDevice) setSelectedSystemDevice(status.systemAudioDevice);
+    if (status.calendarEventId) {
+      resumedEventIdRef.current = status.calendarEventId;
+      setSelectedEvent({ id: status.calendarEventId, provider: status.calendarEventProvider, title: status.title });
+    }
+
+    if (!status.isPaused) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = setInterval(() => {
+        const elapsed = Date.now() - startTimeRef.current - pausedDurationRef.current;
+        setDuration(Math.floor(elapsed / 1000));
+      }, 1000);
+      startAudioLevelMonitor();
+    }
+  }
 
   async function loadDevices() {
     try {

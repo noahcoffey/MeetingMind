@@ -781,7 +781,23 @@ function getElapsedMs(): number {
   return totalElapsed - activeRecording.totalPausedMs - currentPause;
 }
 
-export function getRecordingStatus(): { recording: boolean; duration: number; chunkCount: number; isPaused: boolean } {
+export interface RecordingStatus {
+  recording: boolean;
+  duration: number;
+  chunkCount: number;
+  isPaused: boolean;
+  /** What the session was started with, so a Record page that mounts (or a
+   *  renderer that reloads) mid-recording can pick it back up. */
+  sessionId?: string;
+  title?: string;
+  calendarEventId?: string;
+  calendarEventProvider?: string;
+  userContext?: string;
+  inputDevice?: string;
+  systemAudioDevice?: string;
+}
+
+export function getRecordingStatus(): RecordingStatus {
   if (!activeRecording) {
     return { recording: false, duration: 0, chunkCount: 0, isPaused: false };
   }
@@ -791,6 +807,13 @@ export function getRecordingStatus(): { recording: boolean; duration: number; ch
     duration: Math.floor(getElapsedMs() / 1000),
     chunkCount: activeRecording.chunks.length,
     isPaused: activeRecording.isPaused,
+    sessionId: activeRecording.sessionId,
+    title: activeRecording.title,
+    calendarEventId: activeRecording.calendarEventId,
+    calendarEventProvider: activeRecording.calendarEventProvider,
+    userContext: activeRecording.userContext,
+    inputDevice: activeRecording.inputDevice,
+    systemAudioDevice: activeRecording.systemAudioDevice,
   };
 }
 

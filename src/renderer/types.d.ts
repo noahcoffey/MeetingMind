@@ -37,7 +37,11 @@ export interface MeetingMindAPI {
   cancelRecording: () => Promise<{ success: boolean; error?: string }>;
   pauseRecording: () => Promise<{ success: boolean; error?: string }>;
   resumeRecording: () => Promise<{ success: boolean; error?: string }>;
-  getRecordingStatus: () => Promise<{ recording: boolean; duration: number; chunkCount: number; isPaused: boolean }>;
+  getRecordingStatus: () => Promise<{
+    recording: boolean; duration: number; chunkCount: number; isPaused: boolean;
+    sessionId?: string; title?: string; calendarEventId?: string; calendarEventProvider?: string;
+    userContext?: string; inputDevice?: string; systemAudioDevice?: string;
+  }>;
   getRecordings: (range?: MsRange) => Promise<Recording[]>;
   getRecordingIndex: () => Promise<RecordingIndexEntry[]>;
   getRecording: (id: string) => Promise<Recording | null>;

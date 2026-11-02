@@ -30,6 +30,8 @@ export default function App() {
   // Same idea for "start recording now"; RecordPage only acts on a change it
   // sees while mounted, so a stale signal can't start a recording on its own.
   const [startRecordingSignal, setStartRecordingSignal] = useState(0);
+  // A recording keeps running while you look at other pages; the sidebar shows it.
+  const [recordingState, setRecordingState] = useState({ recording: false, paused: false });
   const jobCleanupRef = useRef<Map<string, () => void>>(new Map());
   const jobExpiryRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -396,6 +398,7 @@ export default function App() {
         currentPage={currentPage}
         onNavigate={handleNavigate}
         backgroundJobs={backgroundJobs}
+        recordingState={recordingState}
         onViewJobRecording={handleViewJobRecording}
         onDismissJob={handleDismissJob}
         notebooks={notebooks}
@@ -411,15 +414,21 @@ export default function App() {
         onRecordingDroppedOnProject={handleRecordingDroppedOnProject}
       />
       <div className="main-content">
-        {currentPage === 'record' && (
+        {/* Always mounted, only hidden: the page holds the live recording's
+            timer, meter and Stop button, and a stop from there is what hands
+            the recording to the pipeline. Unmounting it mid-recording left
+            main recording with nothing on screen to finish it. */}
+        <div style={{ display: currentPage === 'record' ? 'contents' : 'none' }}>
           <RecordPage
             onRecordingComplete={handleRecordingComplete}
             onRecordingSaved={handleRecordingSaved}
             activeNotebook={activeNotebook}
             selectNextSignal={selectNextSignal}
             startRecordingSignal={startRecordingSignal}
+            active={currentPage === 'record'}
+            onRecordingStateChange={setRecordingState}
           />
-        )}
+        </div>
         {currentPage === 'dictate' && <DictatePage />}
         {currentPage === 'meetings' && <MeetingsPage initialMeetingId={viewRecordingId} activeNotebook={activeNotebook} notebooks={notebooks} activeProjectFilter={activeProjectFilter} projects={projects} />}
         {currentPage === 'settings' && <SettingsPage onSettingsChange={loadSettings} />}
