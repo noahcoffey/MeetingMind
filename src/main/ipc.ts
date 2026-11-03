@@ -35,16 +35,64 @@ import { generateWeeklyHighlights, getHighlightsPreview, listSavedHighlights, ge
 import { askQuestion, getQuestions, deleteQuestion, appendQAToObsidian } from './meeting-qa';
 import * as fs from 'fs';
 import * as path from 'path';
+import { isUuid, RENDERER_KEY_SERVICES, isSafeExternalUrl, checkSettingWrite, isTrustedSenderUrl } from './ipc-guard';
+import { settingKeys } from './store';
+
+// Channels whose first argument is a recording ID, and those whose first is a
+// project ID. Both are always crypto.randomUUID() values; anything else is
+// refused before it reaches a path.join.
+const RECORDING_ID_FIRST = new Set([
+  'recordings:get', 'recordings:delete', 'recordings:renameTitle', 'recordings:moveToNotebook', 'recordings:setTags',
+  'transcription:start', 'transcription:status', 'transcription:getTranscript',
+  'notes:generate', 'notes:get', 'notes:update', 'notes:save', 'notes:saveObsidian',
+  'meetinghub:send',
+  'export:clipboard', 'export:pdf', 'export:email', 'export:transcriptClipboard', 'export:transcriptFile',
+  'speakers:rename', 'speakers:prepareForNotes', 'speakers:identify',
+  'projects:moveRecording', 'sentiment:analyze',
+  'qa:ask', 'qa:list', 'qa:delete', 'qa:saveToObsidian',
+]);
+const PROJECT_ID_FIRST = new Set(['projects:rename', 'projects:delete', 'projects:generateSummary', 'projects:getSummary']);
+
+type Handler = (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown;
+
+// ipcMain.handle, plus: only our own page may call, and IDs are checked.
+function handle(channel: string, handler: Handler): void {
+  const dev = process.env.NODE_ENV === 'development';
+  ipcMain.handle(channel, (event, ...args) => {
+    const senderUrl = event.senderFrame?.url;
+    if (!isTrustedSenderUrl(senderUrl, dev)) {
+      log('warn', 'Blocked IPC from an untrusted page', { channel, senderUrl });
+      throw new Error('Not allowed');
+    }
+    if (RECORDING_ID_FIRST.has(channel) && !isUuid(args[0])) {
+      log('warn', 'Blocked IPC with an invalid recording id', { channel });
+      throw new Error('Invalid recording id');
+    }
+    if (PROJECT_ID_FIRST.has(channel) && !isUuid(args[0])) {
+      log('warn', 'Blocked IPC with an invalid project id', { channel });
+      throw new Error('Invalid project id');
+    }
+    if (channel === 'projects:moveRecording' && args[1] !== null && !isUuid(args[1])) {
+      throw new Error('Invalid project id');
+    }
+    return handler(event, ...args);
+  });
+}
 
 export function setupIpcHandlers(): void {
   // Settings handlers
-  ipcMain.handle('settings:get', () => {
+  handle('settings:get', () => {
     const Store = require('electron-store');
     const store = new Store({ name: 'settings' });
     return store.store;
   });
 
-  ipcMain.handle('settings:set', (_event, key: string, value: unknown) => {
+  handle('settings:set', (_event, key: string, value: unknown) => {
+    const problem = checkSettingWrite(key, value, settingKeys());
+    if (problem) {
+      log('warn', 'Rejected settings write', { key, problem });
+      return false;
+    }
     setSetting(key as any, value as any);
     // Invalidate calendar cache when calendar settings change
     if (key === 'icsCalendarUrl' || key === 'icsCalendarEnabled' || key === 'googleCalendarEnabled' || key === 'microsoftCalendarEnabled') {
@@ -53,18 +101,21 @@ export function setupIpcHandlers(): void {
     return true;
   });
 
-  // Keytar handlers for secure API key storage
-  ipcMain.handle('keytar:get', async (_event, service: string) => {
+  // Keychain. The renderer can store and remove keys, and ask whether one is
+  // saved — it never gets a key back.
+  handle('keytar:has', async (_event, service: string) => {
+    if (!RENDERER_KEY_SERVICES.has(service)) return false;
     try {
       const keytar = require('keytar');
-      return await keytar.getPassword('MeetingMind', service);
+      return !!(await keytar.getPassword('MeetingMind', service));
     } catch (err) {
-      log('error', `Failed to get key for ${service}`, err);
-      return null;
+      log('error', `Failed to check key for ${service}`, err);
+      return false;
     }
   });
 
-  ipcMain.handle('keytar:set', async (_event, service: string, value: string) => {
+  handle('keytar:set', async (_event, service: string, value: string) => {
+    if (!RENDERER_KEY_SERVICES.has(service) || typeof value !== 'string') return false;
     try {
       const keytar = require('keytar');
       await keytar.setPassword('MeetingMind', service, value);
@@ -75,7 +126,8 @@ export function setupIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('keytar:delete', async (_event, service: string) => {
+  handle('keytar:delete', async (_event, service: string) => {
+    if (!RENDERER_KEY_SERVICES.has(service)) return false;
     try {
       const keytar = require('keytar');
       return await keytar.deletePassword('MeetingMind', service);
@@ -86,27 +138,36 @@ export function setupIpcHandlers(): void {
   });
 
   // File operations
-  ipcMain.handle('file:openInFinder', async (_event, filePath: string) => {
+  handle('file:openInFinder', async (_event, filePath: string) => {
     // Only reveal files inside the recordings directory — don't let the
     // renderer point Finder at arbitrary paths.
     if (!isPathInsideRecordingsDir(filePath)) {
       log('warn', `Blocked openInFinder outside recordings dir: ${filePath}`);
       return;
     }
+    // The audio may have been removed by retention; show its folder instead.
+    if (!fs.existsSync(filePath) && fs.existsSync(path.dirname(filePath))) {
+      shell.openPath(path.dirname(filePath));
+      return;
+    }
     shell.showItemInFolder(filePath);
   });
 
-  ipcMain.handle('shell:openExternal', async (_event, url: string) => {
+  handle('shell:openExternal', async (_event, url: string) => {
+    if (!isSafeExternalUrl(url)) {
+      log('warn', 'Blocked openExternal for a non-https URL', { url: String(url).slice(0, 200) });
+      return;
+    }
     shell.openExternal(url);
   });
 
-  ipcMain.handle('file:openInObsidian', async (_event, vaultName: string, filePath: string) => {
+  handle('file:openInObsidian', async (_event, vaultName: string, filePath: string) => {
     const encodedFile = encodeURIComponent(filePath);
     const encodedVault = encodeURIComponent(vaultName);
     shell.openExternal(`obsidian://open?vault=${encodedVault}&file=${encodedFile}`);
   });
 
-  ipcMain.handle('file:selectFolder', async () => {
+  handle('file:selectFolder', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory'],
     });
@@ -114,7 +175,7 @@ export function setupIpcHandlers(): void {
     return result.filePaths[0];
   });
 
-  ipcMain.handle('file:selectAudioFile', async () => {
+  handle('file:selectAudioFile', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [{ name: 'Audio', extensions: ['m4a', 'mp3', 'wav', 'aac', 'flac', 'ogg'] }],
@@ -124,76 +185,76 @@ export function setupIpcHandlers(): void {
   });
 
   // Audio devices
-  ipcMain.handle('audio:getDevices', async () => {
+  handle('audio:getDevices', async () => {
     return []; // Handled in renderer via navigator.mediaDevices
   });
 
-  ipcMain.handle('audio:getSystemDevices', async () => {
+  handle('audio:getSystemDevices', async () => {
     return listSystemAudioDevices();
   });
 
   // Audio test
-  ipcMain.handle('audio:testSystem', async (_event, deviceId: string) => {
+  handle('audio:testSystem', async (_event, deviceId: string) => {
     return testSystemAudio(deviceId);
   });
 
   // Recording handlers
-  ipcMain.handle('recording:start', async (_event, deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string) => {
+  handle('recording:start', async (_event, deviceId?: string, systemAudioDeviceId?: string, calendarEventId?: string, userContext?: string, title?: string, notebook?: string, calendarEventProvider?: string) => {
     return startRecording(deviceId || 'default', systemAudioDeviceId, calendarEventId, userContext, title, notebook, calendarEventProvider);
   });
 
-  ipcMain.handle('recording:stop', async () => {
+  handle('recording:stop', async () => {
     return stopRecording();
   });
 
-  ipcMain.handle('recording:import', async (_event, filePath: string, opts?: ImportOptions) => {
+  handle('recording:import', async (_event, filePath: string, opts?: ImportOptions) => {
     return importRecording(filePath, opts);
   });
 
-  ipcMain.handle('recording:cancel', async () => {
+  handle('recording:cancel', async () => {
     return cancelRecording();
   });
 
-  ipcMain.handle('recording:pause', async () => {
+  handle('recording:pause', async () => {
     return pauseRecording();
   });
 
-  ipcMain.handle('recording:resume', async () => {
+  handle('recording:resume', async () => {
     return resumeRecording();
   });
 
-  ipcMain.handle('recording:status', async () => {
+  handle('recording:status', async () => {
     return getRecordingStatus();
   });
 
   // Recordings library
-  ipcMain.handle('recordings:list', async (_event, range?: MsRange) => {
+  handle('recordings:list', async (_event, range?: MsRange) => {
     return listRecordings(range);
   });
 
-  ipcMain.handle('recordings:index', async () => {
+  handle('recordings:index', async () => {
     return listRecordingIndex();
   });
 
-  ipcMain.handle('recordings:get', async (_event, id: string) => {
+  handle('recordings:get', async (_event, id: string) => {
     return getRecording(id);
   });
 
-  ipcMain.handle('recordings:delete', async (_event, id: string) => {
+  handle('recordings:delete', async (_event, id: string) => {
     return deleteRecording(id);
   });
 
   // Transcription
-  ipcMain.handle('transcription:start', async (_event, recordingId: string, opts?: { forceNormalize?: boolean }) => {
+  handle('transcription:start', async (_event, recordingId: string, opts?: { forceNormalize?: boolean }) => {
     return startTranscription(recordingId, opts || {});
   });
 
-  ipcMain.handle('transcription:status', async (_event, recordingId: string) => {
+  handle('transcription:status', async (_event, recordingId: string) => {
     return getTranscriptionStatus(recordingId);
   });
 
   // Live dictation (experiment): one utterance of raw PCM in, cleaned text out.
-  ipcMain.handle('dictation:transcribe', async (_event, pcm: Uint8Array, opts: DictationOptions) => {
+  handle('dictation:transcribe', async (_event, pcm: Uint8Array, opts: DictationOptions) => {
     try {
       const result = await dictate(pcm, opts);
       return { success: true, result };
@@ -203,9 +264,9 @@ export function setupIpcHandlers(): void {
   });
 
   // WhisperX local transcription setup
-  ipcMain.handle('whisperx:checkReady', () => ({ ready: isWhisperXReady() }));
+  handle('whisperx:checkReady', () => ({ ready: isWhisperXReady() }));
 
-  ipcMain.handle('whisperx:setup', async () => {
+  handle('whisperx:setup', async () => {
     const broadcast = (message: string, pct: number) => {
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send('transcription:progress', { status: 'processing', message, progress: pct });
@@ -222,79 +283,79 @@ export function setupIpcHandlers(): void {
   });
 
   // Notes
-  ipcMain.handle('notes:generate', async (_event, recordingId: string) => {
+  handle('notes:generate', async (_event, recordingId: string) => {
     return generateNotes(recordingId);
   });
 
-  ipcMain.handle('notes:get', async (_event, recordingId: string) => {
+  handle('notes:get', async (_event, recordingId: string) => {
     return getNotes(recordingId);
   });
 
-  ipcMain.handle('notes:update', async (_event, recordingId: string, content: string) => {
+  handle('notes:update', async (_event, recordingId: string, content: string) => {
     return updateNotes(recordingId, content);
   });
 
-  ipcMain.handle('notes:save', async (_event, recordingId: string, filename: string) => {
+  handle('notes:save', async (_event, recordingId: string, filename: string) => {
     return saveNotes(recordingId, filename);
   });
 
-  ipcMain.handle('notes:saveObsidian', async (_event, recordingId: string, filename: string) => {
+  handle('notes:saveObsidian', async (_event, recordingId: string, filename: string) => {
     return saveToObsidian(recordingId, filename);
   });
 
   // MeetingHub note sync
-  ipcMain.handle('meetinghub:send', async (_event, recordingId: string) => {
+  handle('meetinghub:send', async (_event, recordingId: string) => {
     return sendToMeetingHub(recordingId, { manual: true });
   });
 
-  ipcMain.handle('meetinghub:getActivity', async () => {
+  handle('meetinghub:getActivity', async () => {
     return getMeetingHubActivity();
   });
 
-  ipcMain.handle('meetinghub:clearActivity', async () => {
+  handle('meetinghub:clearActivity', async () => {
     return clearMeetingHubActivity();
   });
 
   // Calendar
-  ipcMain.handle('calendar:getEvents', async (_event, bypassCache?: boolean) => {
+  handle('calendar:getEvents', async (_event, bypassCache?: boolean) => {
     return getCalendarEvents(bypassCache);
   });
 
-  ipcMain.handle('calendar:connectGoogle', async () => {
+  handle('calendar:connectGoogle', async () => {
     return connectGoogle();
   });
 
-  ipcMain.handle('calendar:connectMicrosoft', async () => {
+  handle('calendar:connectMicrosoft', async () => {
     return connectMicrosoft();
   });
 
-  ipcMain.handle('calendar:disconnect', async (_event, provider: string) => {
+  handle('calendar:disconnect', async (_event, provider: string) => {
     return disconnectCalendar(provider);
   });
 
   // Export
-  ipcMain.handle('export:clipboard', async (_event, recordingId: string) => {
+  handle('export:clipboard', async (_event, recordingId: string) => {
     return copyNotesToClipboard(recordingId);
   });
 
-  ipcMain.handle('export:pdf', async (_event, recordingId: string) => {
+  handle('export:pdf', async (_event, recordingId: string) => {
     return exportNotesAsPDF(recordingId);
   });
 
-  ipcMain.handle('export:email', async (_event, recordingId: string) => {
+  handle('export:email', async (_event, recordingId: string) => {
     return emailNotes(recordingId);
   });
 
-  ipcMain.handle('export:transcriptClipboard', async (_event, recordingId: string) => {
+  handle('export:transcriptClipboard', async (_event, recordingId: string) => {
     return copyTranscriptToClipboard(recordingId);
   });
 
-  ipcMain.handle('export:transcriptFile', async (_event, recordingId: string) => {
+  handle('export:transcriptFile', async (_event, recordingId: string) => {
     return exportTranscriptAsMarkdown(recordingId);
   });
 
   // Speaker renaming
-  ipcMain.handle('speakers:rename', async (_event, recordingId: string, oldName: string, newName: string) => {
+  handle('speakers:rename', async (_event, recordingId: string, oldName: string, newName: string) => {
     const recording = getRecording(recordingId);
     if (!recording) return { success: false, error: 'Recording not found' };
 
@@ -326,25 +387,25 @@ export function setupIpcHandlers(): void {
   });
 
   // Speaker directory
-  ipcMain.handle('speakers:getDirectory', async () => {
+  handle('speakers:getDirectory', async () => {
     return getSetting('speakerDirectory') || [];
   });
 
   // Speaker review gate (see speaker-review.ts)
-  ipcMain.handle('speakers:prepareForNotes', async (_event, recordingId: string) => {
+  handle('speakers:prepareForNotes', async (_event, recordingId: string) => {
     return prepareSpeakerReview(recordingId);
   });
 
-  ipcMain.handle('speakers:identify', async (_event, recordingId: string) => {
+  handle('speakers:identify', async (_event, recordingId: string) => {
     return identifySpeakers(recordingId);
   });
 
-  ipcMain.handle('speakers:listAwaitingReview', async () => {
+  handle('speakers:listAwaitingReview', async () => {
     return listAwaitingReview();
   });
 
   // Rename recording title
-  ipcMain.handle('recordings:renameTitle', async (_event, recordingId: string, newTitle: string) => {
+  handle('recordings:renameTitle', async (_event, recordingId: string, newTitle: string) => {
     const recording = getRecording(recordingId);
     if (!recording) return { success: false, error: 'Recording not found' };
 
@@ -362,7 +423,7 @@ export function setupIpcHandlers(): void {
   });
 
   // Move recording to notebook
-  ipcMain.handle('recordings:moveToNotebook', async (_event, recordingId: string, notebook: string) => {
+  handle('recordings:moveToNotebook', async (_event, recordingId: string, notebook: string) => {
     const recording = getRecording(recordingId);
     if (!recording) return { success: false, error: 'Recording not found' };
 
@@ -380,7 +441,7 @@ export function setupIpcHandlers(): void {
   });
 
   // Transcript data (utterances for transcript viewer)
-  ipcMain.handle('transcription:getTranscript', async (_event, recordingId: string) => {
+  handle('transcription:getTranscript', async (_event, recordingId: string) => {
     const recording = getRecording(recordingId);
     if (!recording) return null;
     const outputDir = path.dirname(recording.audioPath);
@@ -395,105 +456,105 @@ export function setupIpcHandlers(): void {
   });
 
   // Search
-  ipcMain.handle('search:query', async (_event, query: string) => {
+  handle('search:query', async (_event, query: string) => {
     return searchRecordings(query);
   });
 
   // Tags
-  ipcMain.handle('recordings:setTags', async (_event, recordingId: string, tags: string[]) => {
+  handle('recordings:setTags', async (_event, recordingId: string, tags: string[]) => {
     return setTags(recordingId, tags);
   });
 
-  ipcMain.handle('recordings:getAllTags', async () => {
+  handle('recordings:getAllTags', async () => {
     return getAllTags();
   });
 
   // Projects
-  ipcMain.handle('projects:list', async () => {
+  handle('projects:list', async () => {
     return getSetting('projects') || [];
   });
 
-  ipcMain.handle('projects:create', async (_event, name: string, notebook: string) => {
+  handle('projects:create', async (_event, name: string, notebook: string) => {
     return createProject(name, notebook);
   });
 
-  ipcMain.handle('projects:rename', async (_event, id: string, name: string) => {
+  handle('projects:rename', async (_event, id: string, name: string) => {
     return renameProject(id, name);
   });
 
-  ipcMain.handle('projects:delete', async (_event, id: string) => {
+  handle('projects:delete', async (_event, id: string) => {
     return deleteProject(id);
   });
 
-  ipcMain.handle('projects:moveRecording', async (_event, recordingId: string, projectId: string | null) => {
+  handle('projects:moveRecording', async (_event, recordingId: string, projectId: string | null) => {
     return moveToProject(recordingId, projectId);
   });
 
-  ipcMain.handle('projects:generateSummary', async (_event, projectId: string) => {
+  handle('projects:generateSummary', async (_event, projectId: string) => {
     return generateProjectSummary(projectId);
   });
 
-  ipcMain.handle('projects:getSummary', async (_event, projectId: string) => {
+  handle('projects:getSummary', async (_event, projectId: string) => {
     return getProjectSummary(projectId);
   });
 
-  ipcMain.handle('projects:notebookRenamed', async (_event, oldName: string, newName: string) => {
+  handle('projects:notebookRenamed', async (_event, oldName: string, newName: string) => {
     updateProjectsForNotebookRename(oldName, newName);
   });
 
-  ipcMain.handle('projects:notebookDeleted', async (_event, notebookName: string) => {
+  handle('projects:notebookDeleted', async (_event, notebookName: string) => {
     deleteProjectsForNotebook(notebookName);
   });
 
   // Sentiment
-  ipcMain.handle('sentiment:analyze', async (_event, recordingId: string) => {
+  handle('sentiment:analyze', async (_event, recordingId: string) => {
     return analyzeSentiment(recordingId);
   });
 
   // Analytics
-  ipcMain.handle('analytics:getStats', async () => {
+  handle('analytics:getStats', async () => {
     return getAnalyticsStats();
   });
 
-  ipcMain.handle('analytics:getTrends', async () => {
+  handle('analytics:getTrends', async () => {
     return generateTrendInsights();
   });
 
   // Weekly Highlights
-  ipcMain.handle('highlights:preview', async (_event, startDate: string, endDate: string) => {
+  handle('highlights:preview', async (_event, startDate: string, endDate: string) => {
     return getHighlightsPreview(startDate, endDate);
   });
 
-  ipcMain.handle('highlights:generate', async (_event, startDate: string, endDate: string) => {
+  handle('highlights:generate', async (_event, startDate: string, endDate: string) => {
     return generateWeeklyHighlights(startDate, endDate);
   });
 
-  ipcMain.handle('highlights:list', async () => {
+  handle('highlights:list', async () => {
     return listSavedHighlights();
   });
 
-  ipcMain.handle('highlights:get', async (_event, id: string) => {
+  handle('highlights:get', async (_event, id: string) => {
     return getSavedHighlight(id);
   });
 
-  ipcMain.handle('highlights:delete', async (_event, id: string) => {
+  handle('highlights:delete', async (_event, id: string) => {
     return deleteSavedHighlight(id);
   });
 
   // Meeting Q&A
-  ipcMain.handle('qa:ask', async (_event, recordingId: string, question: string) => {
+  handle('qa:ask', async (_event, recordingId: string, question: string) => {
     return askQuestion(recordingId, question);
   });
 
-  ipcMain.handle('qa:list', async (_event, recordingId: string) => {
+  handle('qa:list', async (_event, recordingId: string) => {
     return getQuestions(recordingId);
   });
 
-  ipcMain.handle('qa:delete', async (_event, recordingId: string, qaId: string) => {
+  handle('qa:delete', async (_event, recordingId: string, qaId: string) => {
     return deleteQuestion(recordingId, qaId);
   });
 
-  ipcMain.handle('qa:saveToObsidian', async (_event, recordingId: string, qaId: string) => {
+  handle('qa:saveToObsidian', async (_event, recordingId: string, qaId: string) => {
     return appendQAToObsidian(recordingId, qaId);
   });
 

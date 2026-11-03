@@ -1,4 +1,5 @@
 import React from 'react';
+import { MODEL_OPTIONS, currentModelId } from '../../../main/claude-models';
 
 const DEFAULT_PROMPT = `You are a professional meeting notes assistant. Based on the transcript and context below, generate structured meeting notes in Markdown format.
 
@@ -74,12 +75,12 @@ export default function AINotesSettings({
           <label className="form-label">Model</label>
           <select
             className="form-select"
-            value={settings.claudeModel || 'claude-sonnet-4-6'}
+            value={currentModelId(settings.claudeModel)}
             onChange={e => updateSetting('claudeModel', e.target.value)}
           >
-            <option value="claude-opus-4-8">Claude Opus 4.8</option>
-            <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+            {MODEL_OPTIONS.map(m => (
+              <option key={m.id} value={m.id}>{m.label}</option>
+            ))}
           </select>
         </div>
       </div>

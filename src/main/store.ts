@@ -1,4 +1,5 @@
 import Store from 'electron-store';
+import { DEFAULT_MODEL, currentModelId } from './claude-models';
 
 export interface VocabularyEntry {
   term: string;
@@ -34,6 +35,8 @@ export interface AppSettings {
   // Pause the automatic pipeline after transcription until the speakers have
   // names, so notes (and the MeetingHub push) attribute things to real people.
   speakerReviewBeforeNotes: boolean;
+  /** Delete a meeting's audio this many days after it was recorded (0 = keep forever). Transcript and notes are kept. */
+  retentionDays: number;
   // Ask Claude to propose who each diarized speaker is, from the attendee list
   // and the transcript. When every speaker resolves with high confidence the
   // review step is skipped.
@@ -77,10 +80,11 @@ const defaults: AppSettings = {
   whisperxModel: 'large-v3-turbo',
   whisperxLanguage: '',
   notesProvider: 'cli',
-  claudeModel: 'claude-sonnet-4-6',
+  claudeModel: DEFAULT_MODEL,
   notesPromptTemplate: '',
   autoTranscribe: false,
   speakerReviewBeforeNotes: true,
+  retentionDays: 60,
   speakerIdentifyWithClaude: true,
   icsCalendarUrl: '',
   icsCalendarEnabled: false,
@@ -121,17 +125,18 @@ export function initializeStore(): void {
     store.set('recordingOutputFolder', path.join(os.homedir(), 'Documents', 'MeetingMind'));
   }
 
-  // Migrate retired Claude model IDs to their current equivalents. Older installs
-  // persisted dated Sonnet 4 / Opus 4 IDs that are now deprecated and rejected by
-  // the API and the Claude CLI ("model may not exist or you may not have access").
-  const RETIRED_MODELS: Record<string, string> = {
-    'claude-sonnet-4-20250514': 'claude-sonnet-4-6',
-    'claude-opus-4-20250514': 'claude-opus-4-8',
-  };
-  const currentModel = store.get('claudeModel');
-  if (currentModel && RETIRED_MODELS[currentModel]) {
-    store.set('claudeModel', RETIRED_MODELS[currentModel]);
+  // Move a saved model ID from an older version to the current model of the
+  // same tier. Retired IDs are rejected by the API and the CLI outright.
+  const savedModel = store.get('claudeModel');
+  const current = currentModelId(savedModel);
+  if (savedModel && current !== savedModel) {
+    store.set('claudeModel', current);
   }
+}
+
+/** Every real setting name, for checking writes that come from the renderer. */
+export function settingKeys(): Set<string> {
+  return new Set(Object.keys(defaults));
 }
 
 export function getStore(): Store<AppSettings> {

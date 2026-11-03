@@ -1,5 +1,7 @@
-// Pin a timezone with a non-zero offset and a DST transition, so the local-vs-UTC
-// day distinction is actually exercised. Must happen before any Date is created.
+// These tests need a timezone with a non-zero offset and a DST transition, so the
+// local-vs-UTC day distinction is actually exercised. jest.config.js pins
+// America/New_York for the whole run; setting it here alone has no effect, since
+// Jest gives each test file its own copy of process.env.
 process.env.TZ = 'America/New_York';
 
 import {

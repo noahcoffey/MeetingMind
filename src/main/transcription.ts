@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { AsyncLocalStorage } from 'async_hooks';
 import { log } from './logger';
 import { getRecording, getFFmpegPath } from './recording-manager';
 import { getSetting } from './store';
@@ -60,11 +61,39 @@ async function retryFetch(url: string, options: RequestInit, retries = MAX_RETRI
   throw new Error('All retries exhausted');
 }
 
+// Which recording the current transcription is for. Every progress event is
+// tagged with it, so the renderer shows each one on the right meeting — and a
+// background job's failure never lands on whatever meeting happens to be open.
+const progressScope = new AsyncLocalStorage<string>();
+
+// A rough place on the bar for each stage. Only WhisperX and AssemblyAI
+// polling report anything finer; the rest is "which step are we on".
+const STAGE_PROGRESS: Record<string, number> = {
+  analyzing: 3,
+  normalizing: 6,
+  uploading: 10,
+  processing: 25,
+  complete: 100,
+};
+
 function sendProgress(status: string, message: string, progress?: number): void {
+  const recordingId = progressScope.getStore();
+  const pct = progress ?? STAGE_PROGRESS[status];
   const windows = BrowserWindow.getAllWindows();
   for (const win of windows) {
-    win.webContents.send('transcription:progress', { status, message, progress });
+    win.webContents.send('transcription:progress', { recordingId, status, message, progress: pct });
   }
+}
+
+/**
+ * How far along a cloud job probably is while we poll it. The provider says
+ * nothing until it's done, so this assumes it takes about a third of the
+ * audio's length, and never claims more than 90% until it really finishes.
+ */
+export function pollingProgress(elapsedSec: number, audioSec: number): number {
+  const expected = Math.max(60, audioSec * 0.33);
+  const start = STAGE_PROGRESS.processing;
+  return Math.round(start + (90 - start) * Math.min(1, elapsedSec / expected));
 }
 
 // Cost rates per hour for each provider
@@ -151,6 +180,7 @@ async function transcribeWithAssemblyAI(audioPath: string, recordingDuration: nu
 
 async function pollAssemblyAI(apiKey: string, transcriptId: string, recordingDuration: number, recordingId?: string): Promise<{ transcript: any; audioDurationSec: number }> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
+  const pollStarted = Date.now();
 
   while (true) {
     await new Promise(r => setTimeout(r, POLL_INTERVAL));
@@ -174,7 +204,11 @@ async function pollAssemblyAI(apiKey: string, transcriptId: string, recordingDur
       if (recordingId) clearPendingTranscript(recordingId);
       throw new Error(`Transcription error: ${result.error}`);
     } else {
-      sendProgress('processing', `Processing... (${result.status})`);
+      sendProgress(
+        'processing',
+        result.status === 'queued' ? 'Waiting in AssemblyAI\'s queue...' : 'AssemblyAI is transcribing...',
+        pollingProgress((Date.now() - pollStarted) / 1000, recordingDuration || 0),
+      );
     }
 
     if (Date.now() > deadline) {
@@ -473,9 +507,16 @@ async function runTranscription(provider: string, audioPath: string, recordingDu
   }
 }
 
-export async function startTranscription(
+export function startTranscription(
   recordingId: string,
   opts: { forceNormalize?: boolean } = {}
+): Promise<{ success: boolean; error?: string; normalized?: boolean }> {
+  return progressScope.run(recordingId, () => transcribeRecording(recordingId, opts));
+}
+
+async function transcribeRecording(
+  recordingId: string,
+  opts: { forceNormalize?: boolean }
 ): Promise<{ success: boolean; error?: string; normalized?: boolean }> {
   const recording = getRecording(recordingId);
   if (!recording) return { success: false, error: 'Recording not found' };

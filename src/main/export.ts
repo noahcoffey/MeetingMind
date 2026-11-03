@@ -1,4 +1,4 @@
-import { clipboard, shell, BrowserWindow, dialog } from 'electron';
+import { clipboard, ClipboardItem, shell, BrowserWindow, dialog } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { log } from './logger';
@@ -134,7 +134,7 @@ function getNotesContent(recordingId: string): { content: string; outputDir: str
 }
 
 // Copy notes to clipboard as plain text
-export function copyNotesToClipboard(recordingId: string): { success: boolean; error?: string } {
+export async function copyNotesToClipboard(recordingId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const result = getNotesContent(recordingId);
     if (!result) {
@@ -142,7 +142,8 @@ export function copyNotesToClipboard(recordingId: string): { success: boolean; e
     }
 
     const html = markdownToHtml(result.content);
-    clipboard.write({ text: result.content, html });
+    // Plain text plus an HTML rendering, so it pastes formatted where it can.
+    await clipboard.write([new ClipboardItem({ 'text/plain': result.content, 'text/html': html })]);
     log('info', `Notes copied to clipboard for recording ${recordingId}`);
     return { success: true };
   } catch (err) {
@@ -379,12 +380,12 @@ function getTranscriptMarkdown(recordingId: string): { markdown: string; recordi
 }
 
 // Copy the speaker-labeled transcript to the clipboard as markdown.
-export function copyTranscriptToClipboard(recordingId: string): { success: boolean; error?: string } {
+export async function copyTranscriptToClipboard(recordingId: string): Promise<{ success: boolean; error?: string }> {
   try {
     const result = getTranscriptMarkdown(recordingId);
     if (!result) return { success: false, error: 'Recording or transcript not found' };
 
-    clipboard.writeText(result.markdown);
+    await clipboard.writeText(result.markdown);
     log('info', `Transcript copied to clipboard for recording ${recordingId}`);
     return { success: true };
   } catch (err) {

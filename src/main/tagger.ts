@@ -1,12 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { spawn } from 'child_process';
-import Anthropic from '@anthropic-ai/sdk';
 import { log } from './logger';
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
-import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
+import { runClaude } from './claude-cli';
+import { LIGHT_MODEL } from './claude-models';
 
 function getOutputDir(): string {
   return getSetting('recordingOutputFolder') || path.join(os.homedir(), 'Documents', 'MeetingMind');
@@ -30,87 +29,22 @@ function getRecordingDir(recordingId: string): string | null {
 
 const TAG_PROMPT = 'Based on these meeting notes, suggest 2-4 short category tags (1-2 words each). Return ONLY a JSON array of lowercase strings, nothing else.';
 
-async function getTagsViaCLI(notesContent: string): Promise<string[]> {
-  const claudePath = getClaudePath();
-  const prompt = `${TAG_PROMPT}\n\n${notesContent}`;
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn(claudePath, ['-p', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'text'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: getShellEnv(),
-    });
-
-    let output = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data: Buffer) => { output += data.toString(); });
-    proc.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-
-    proc.on('close', (code) => {
-      if (code === 0 && output.trim()) {
-        try {
-          const tags = JSON.parse(output.trim());
-          if (Array.isArray(tags)) {
-            resolve(tags.filter((t: unknown) => typeof t === 'string'));
-          } else {
-            reject(new Error('Response is not a JSON array'));
-          }
-        } catch {
-          // Try to extract JSON array from the output
-          const match = output.match(/\[[\s\S]*?\]/);
-          if (match) {
-            try {
-              const tags = JSON.parse(match[0]);
-              resolve(tags.filter((t: unknown) => typeof t === 'string'));
-              return;
-            } catch {}
-          }
-          reject(new Error(`Failed to parse tags from CLI output: ${output.trim()}`));
-        }
-      } else {
-        reject(new Error(`claude CLI exited with code ${code}: ${stderr}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to spawn claude CLI: ${err.message}`));
-    });
-
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-  });
-}
-
-async function getTagsViaAPI(notesContent: string): Promise<string[]> {
-  const apiKey = await getAnthropicKey();
-  const client = new Anthropic({ apiKey });
-  const prompt = `${TAG_PROMPT}\n\n${notesContent}`;
-
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 200,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const text = (response.content[0] as any).text?.trim() || '';
-
+/** Pull a list of tags out of a reply that should be a JSON array but may have text around it. */
+export function parseTags(text: string): string[] {
+  const clean = (v: unknown): string[] | null =>
+    Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : null;
   try {
-    const tags = JSON.parse(text);
-    if (Array.isArray(tags)) {
-      return tags.filter((t: unknown) => typeof t === 'string');
-    }
+    const tags = clean(JSON.parse(text.trim()));
+    if (tags) return tags;
   } catch {}
-
-  // Try to extract JSON array from the text
   const match = text.match(/\[[\s\S]*?\]/);
   if (match) {
     try {
-      const tags = JSON.parse(match[0]);
-      return tags.filter((t: unknown) => typeof t === 'string');
+      const tags = clean(JSON.parse(match[0]));
+      if (tags) return tags;
     } catch {}
   }
-
-  throw new Error(`Failed to parse tags from API response: ${text}`);
+  throw new Error(`Failed to parse tags from reply: ${text.trim().slice(0, 200)}`);
 }
 
 export async function autoTagRecording(recordingId: string): Promise<string[]> {
@@ -130,14 +64,15 @@ export async function autoTagRecording(recordingId: string): Promise<string[]> {
     const notesContent = fs.readFileSync(notesPath, 'utf-8');
     const truncated = notesContent.substring(0, 800);
 
-    const provider = getSetting('notesProvider') || 'cli';
-    let tags: string[];
-
-    if (provider === 'cli') {
-      tags = await getTagsViaCLI(truncated);
-    } else {
-      tags = await getTagsViaAPI(truncated);
-    }
+    const { text } = await runClaude({
+      label: 'tags',
+      prompt: `${TAG_PROMPT}\n\n${truncated}`,
+      model: LIGHT_MODEL,
+      maxTokens: 2000,
+      effort: 'low',
+      timeoutMs: 2 * 60 * 1000,
+    });
+    const tags = parseTags(text);
 
     // Write tags to manifest
     const manifestPath = path.join(recordingDir, 'manifest.json');

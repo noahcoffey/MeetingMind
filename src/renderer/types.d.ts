@@ -26,7 +26,8 @@ export interface DictationResult {
 export interface MeetingMindAPI {
   getSettings: () => Promise<Record<string, unknown>>;
   setSetting: (key: string, value: unknown) => Promise<boolean>;
-  getApiKey: (service: string) => Promise<string | null>;
+  /** Whether a key is saved. Keys never come back to the renderer. */
+  hasApiKey: (service: string) => Promise<boolean>;
   setApiKey: (service: string, value: string) => Promise<boolean>;
   deleteApiKey: (service: string) => Promise<boolean>;
   getAudioDevices: () => Promise<MediaDeviceInfo[]>;
@@ -37,7 +38,11 @@ export interface MeetingMindAPI {
   cancelRecording: () => Promise<{ success: boolean; error?: string }>;
   pauseRecording: () => Promise<{ success: boolean; error?: string }>;
   resumeRecording: () => Promise<{ success: boolean; error?: string }>;
-  getRecordingStatus: () => Promise<{ recording: boolean; duration: number; chunkCount: number; isPaused: boolean }>;
+  getRecordingStatus: () => Promise<{
+    recording: boolean; duration: number; chunkCount: number; isPaused: boolean;
+    sessionId?: string; title?: string; calendarEventId?: string; calendarEventProvider?: string;
+    userContext?: string; inputDevice?: string; systemAudioDevice?: string;
+  }>;
   getRecordings: (range?: MsRange) => Promise<Recording[]>;
   getRecordingIndex: () => Promise<RecordingIndexEntry[]>;
   getRecording: (id: string) => Promise<Recording | null>;
@@ -124,6 +129,8 @@ export interface Recording {
   calendarEventId?: string;
   calendarEventProvider?: 'google' | 'microsoft' | 'ics';
   userContext?: string;
+  /** When retention deleted this meeting's audio. The transcript and notes remain. */
+  audioRemovedAt?: string;
   /** How the recording was made. Absent on older recordings, which were all live. */
   source?: 'live' | 'import';
   meetinghub?: {

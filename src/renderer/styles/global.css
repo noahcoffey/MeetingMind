@@ -671,6 +671,35 @@ body {
   flex-shrink: 0;
 }
 
+/* A recording is running — visible from any page */
+.sidebar-rec-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-primary);
+}
+
+.sidebar-rec-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.sidebar-rec-badge.paused {
+  color: var(--accent-yellow);
+}
+
+.sidebar-rec-badge.paused .sidebar-rec-dot {
+  animation: none;
+}
+
 /* Projects section */
 .sidebar-projects-section {
   padding: 4px 8px;
@@ -852,6 +881,27 @@ body {
 }
 .btn-primary:hover {
   background: var(--accent-blue-hover);
+}
+
+/* Confirmation dialog (components/ConfirmDialog.tsx) */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  padding: 24px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: var(--shadow-modal);
 }
 
 .btn-danger {
@@ -1788,6 +1838,19 @@ body {
 }
 
 /* Indeterminate progress bar */
+.progress-track {
+  background: var(--bg-input);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
 .progress-bar-indeterminate {
   height: 100%;
   width: 40%;

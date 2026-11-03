@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import PipelineWidget, { BackgroundJob } from './PipelineWidget';
+import ConfirmDialog from './ConfirmDialog';
 import type { Project } from '../types';
 
 type Page = 'record' | 'dictate' | 'meetings' | 'settings' | 'analytics' | 'highlights';
@@ -8,6 +9,7 @@ interface SidebarProps {
   currentPage: Page;
   onNavigate: (page: Page) => void;
   backgroundJobs: BackgroundJob[];
+  recordingState?: { recording: boolean; paused: boolean };
   onViewJobRecording: (recordingId: string) => void;
   onDismissJob: (recordingId: string) => void;
   notebooks: string[];
@@ -24,7 +26,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({
-  currentPage, onNavigate, backgroundJobs, onViewJobRecording, onDismissJob,
+  currentPage, onNavigate, backgroundJobs, recordingState, onViewJobRecording, onDismissJob,
   notebooks, activeNotebook, onNotebookChange, onNotebooksUpdate,
   projects = [], activeProjectFilter, onProjectSelect, onProjectCreate,
   onProjectRename, onProjectDelete, onRecordingDroppedOnProject,
@@ -34,6 +36,9 @@ export default function Sidebar({
   const [newName, setNewName] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
+  const [notebookToDelete, setNotebookToDelete] = useState<
+    { index: number; name: string; fallback: string; meetingCount: number; projectCount: number } | null
+  >(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const createInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -94,8 +99,22 @@ export default function Sidebar({
     setEditName('');
   }
 
-  function handleDelete(index: number) {
+  // Asks first (see the dialog below); performDelete runs on confirm.
+  async function handleDelete(index: number) {
     if (notebooks.length <= 1) return; // Keep at least one
+    const name = notebooks[index];
+    const fallback = notebooks.filter((_, i) => i !== index)[0];
+    let meetingCount = 0;
+    try {
+      meetingCount = (await window.meetingMind.getRecordingIndex()).filter(r => r.notebook === name).length;
+    } catch {}
+    const projectCount = projects.filter(p => p.notebook === name).length;
+    setNotebookToDelete({ index, name, fallback, meetingCount, projectCount });
+  }
+
+  function performDelete(index: number) {
+    setNotebookToDelete(null);
+    if (notebooks.length <= 1) return;
     const name = notebooks[index];
     const updated = notebooks.filter((_, i) => i !== index);
     // Move recordings from deleted notebook to first remaining
@@ -115,6 +134,21 @@ export default function Sidebar({
 
   return (
     <div className="sidebar">
+      {notebookToDelete && (
+        <ConfirmDialog
+          title={`Delete notebook "${notebookToDelete.name}"?`}
+          confirmLabel="Delete notebook"
+          danger
+          onCancel={() => setNotebookToDelete(null)}
+          onConfirm={() => performDelete(notebookToDelete.index)}
+        >
+          {notebookToDelete.meetingCount > 0
+            ? <>Its {notebookToDelete.meetingCount} meeting{notebookToDelete.meetingCount === 1 ? '' : 's'} move to <strong>{notebookToDelete.fallback}</strong>. </>
+            : <>It has no meetings. </>}
+          {notebookToDelete.projectCount > 0 &&
+            <>Its {notebookToDelete.projectCount} project{notebookToDelete.projectCount === 1 ? ' is' : 's are'} deleted (the meetings in them are kept). </>}
+        </ConfirmDialog>
+      )}
       {/* Notebook selector */}
       <div ref={menuRef} style={{ padding: '12px 12px 4px', position: 'relative', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <button
@@ -301,6 +335,15 @@ export default function Sidebar({
             <circle cx="12" cy="12" r="4" fill="currentColor" />
           </svg>
           Record
+          {recordingState?.recording && (
+            <span
+              className={`sidebar-rec-badge ${recordingState.paused ? 'paused' : ''}`}
+              title={recordingState.paused ? 'Recording paused' : 'Recording in progress'}
+            >
+              <span className="sidebar-rec-dot" />
+              {recordingState.paused ? 'Paused' : 'Rec'}
+            </span>
+          )}
         </button>
 
         <button

@@ -138,3 +138,20 @@ describe('getTranscriptionStatus', () => {
     expect(status.status).toBe('transcribing');
   });
 });
+
+describe('pollingProgress', () => {
+  const { pollingProgress } = require('./transcription');
+
+  test('starts where processing begins and moves with time', () => {
+    expect(pollingProgress(0, 3600)).toBe(25);
+    const early = pollingProgress(60, 3600);
+    const later = pollingProgress(600, 3600);
+    expect(early).toBeGreaterThan(25);
+    expect(later).toBeGreaterThan(early);
+  });
+
+  test('never claims to be done before the provider says so', () => {
+    expect(pollingProgress(100000, 3600)).toBe(90);
+    expect(pollingProgress(100000, 0)).toBe(90);
+  });
+});

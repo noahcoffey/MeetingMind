@@ -8,6 +8,7 @@ import { getSetting } from './store';
 import { writeJsonAtomic } from './fs-utils';
 import { checkCrashRecovery, RecoverableSession } from './recorder';
 import { spawn, ChildProcess } from 'child_process';
+import { isSafePathSegment } from './ipc-guard';
 
 const CHUNK_DURATION_SEC = 300; // 5 minutes
 const MANIFEST_INTERVAL_MS = 30000; // 30 seconds
@@ -781,7 +782,23 @@ function getElapsedMs(): number {
   return totalElapsed - activeRecording.totalPausedMs - currentPause;
 }
 
-export function getRecordingStatus(): { recording: boolean; duration: number; chunkCount: number; isPaused: boolean } {
+export interface RecordingStatus {
+  recording: boolean;
+  duration: number;
+  chunkCount: number;
+  isPaused: boolean;
+  /** What the session was started with, so a Record page that mounts (or a
+   *  renderer that reloads) mid-recording can pick it back up. */
+  sessionId?: string;
+  title?: string;
+  calendarEventId?: string;
+  calendarEventProvider?: string;
+  userContext?: string;
+  inputDevice?: string;
+  systemAudioDevice?: string;
+}
+
+export function getRecordingStatus(): RecordingStatus {
   if (!activeRecording) {
     return { recording: false, duration: 0, chunkCount: 0, isPaused: false };
   }
@@ -791,6 +808,13 @@ export function getRecordingStatus(): { recording: boolean; duration: number; ch
     duration: Math.floor(getElapsedMs() / 1000),
     chunkCount: activeRecording.chunks.length,
     isPaused: activeRecording.isPaused,
+    sessionId: activeRecording.sessionId,
+    title: activeRecording.title,
+    calendarEventId: activeRecording.calendarEventId,
+    calendarEventProvider: activeRecording.calendarEventProvider,
+    userContext: activeRecording.userContext,
+    inputDevice: activeRecording.inputDevice,
+    systemAudioDevice: activeRecording.systemAudioDevice,
   };
 }
 
@@ -896,6 +920,47 @@ export function testSystemAudio(deviceId: string, durationSec: number = 4): Prom
   });
 }
 
+// A recording found mid-job at launch has nothing working on it any more: the
+// app quit (or crashed) while it was transcribing or writing notes. Put it back
+// to the last state it really reached so the library offers the next step
+// again instead of a spinner that never ends. (Retrying an AssemblyAI job picks
+// up the pending transcript rather than uploading again.)
+export function statusAfterInterruption(
+  status: string | undefined,
+  has: { transcript: boolean; notes: boolean },
+): string | null {
+  if (status === 'transcribing') return has.transcript ? 'transcribed' : 'recorded';
+  if (status === 'generating') return has.notes ? 'complete' : 'transcribed';
+  return null;
+}
+
+/** Run once at launch, before any job can start. Returns the ids it reset. */
+export function resetInterruptedJobs(): string[] {
+  const outputDir = getOutputDir();
+  if (!fs.existsSync(outputDir)) return [];
+  const reset: string[] = [];
+  for (const dir of fs.readdirSync(outputDir)) {
+    const recDir = path.join(outputDir, dir);
+    const manifestPath = path.join(recDir, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) continue;
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const next = statusAfterInterruption(manifest.status, {
+        transcript: fs.existsSync(path.join(recDir, 'transcript.json')),
+        notes: fs.existsSync(path.join(recDir, 'notes.md')),
+      });
+      if (!next) continue;
+      log('info', 'Resetting a job interrupted by quit', { id: manifest.id, from: manifest.status, to: next });
+      manifest.status = next;
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+      reset.push(manifest.id);
+    } catch (err) {
+      log('warn', 'Could not check recording for an interrupted job', { dir, error: String(err) });
+    }
+  }
+  return reset;
+}
+
 // A recording's date range, as epoch milliseconds. Day boundaries are worked out
 // in the renderer (src/renderer/meeting-dates.ts) because only it knows the user's
 // local calendar; main just compares numbers.
@@ -966,6 +1031,7 @@ export function listRecordingIndex(): RecordingIndexEntry[] {
 }
 
 export function getRecording(id: string): any | null {
+  if (!isSafePathSegment(id)) return null;
   const manifestPath = path.join(getOutputDir(), id, 'manifest.json');
   if (!fs.existsSync(manifestPath)) return null;
   try {
@@ -976,6 +1042,9 @@ export function getRecording(id: string): any | null {
 }
 
 export function deleteRecording(id: string): { success: boolean; error?: string } {
+  // This is a recursive delete: the id must name one folder inside the
+  // recordings folder and nothing else.
+  if (!isSafePathSegment(id)) return { success: false, error: 'Invalid recording id' };
   const recordingDir = path.join(getOutputDir(), id);
   if (!fs.existsSync(recordingDir)) {
     return { success: false, error: 'Recording not found' };

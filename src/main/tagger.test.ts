@@ -128,3 +128,19 @@ describe('getAllTags', () => {
     expect(getAllTags()).toEqual([]);
   });
 });
+
+describe('parseTags', () => {
+  const { parseTags } = require('./tagger');
+
+  test('reads a bare JSON array', () => {
+    expect(parseTags('["planning", "hiring"]')).toEqual(['planning', 'hiring']);
+  });
+
+  test('finds the array inside surrounding text and drops non-strings', () => {
+    expect(parseTags('Here you go:\n["budget", 3, "q3"]\nThanks')).toEqual(['budget', 'q3']);
+  });
+
+  test('throws when there is no array', () => {
+    expect(() => parseTags('no tags here')).toThrow(/Failed to parse tags/);
+  });
+});

@@ -1,10 +1,13 @@
 import React from 'react';
+import ProgressBar from './ProgressBar';
 
 export interface BackgroundJob {
   recordingId: string;
   title: string;
   stage: 'transcribing' | 'awaiting-speakers' | 'generating-notes' | 'complete' | 'error';
   message: string;
+  /** 0–100 when the current step reports it. */
+  progress?: number;
 }
 
 interface PipelineWidgetProps {
@@ -134,19 +137,19 @@ export default function PipelineWidget({ jobs, onViewRecording, onDismiss }: Pip
                   animation: 'spin 0.8s linear infinite',
                   flexShrink: 0,
                 }} />
-                <span style={{ flex: 1 }}>
-                  {job.stage === 'transcribing' ? 'Transcribing...' : 'Generating notes...'}
+                <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={job.message}>
+                  {job.message || (job.stage === 'transcribing' ? 'Transcribing...' : 'Generating notes...')}
                 </span>
+                {job.stage === 'transcribing' && typeof job.progress === 'number' && (
+                  <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--text-muted)' }}>{Math.round(job.progress)}%</span>
+                )}
               </div>
-              {/* Mini progress bar */}
-              <div style={{
-                marginTop: 6,
-                height: 3,
-                background: 'var(--bg-input)',
-                borderRadius: 2,
-                overflow: 'hidden',
-              }}>
-                <div className="progress-bar-indeterminate" />
+              <div style={{ marginTop: 6 }}>
+                <ProgressBar
+                  height={3}
+                  value={job.stage === 'transcribing' ? job.progress : undefined}
+                  label={job.stage === 'transcribing' ? 'Transcription progress' : 'Generating notes'}
+                />
               </div>
             </>
           )}

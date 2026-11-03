@@ -3,13 +3,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
-import { spawn } from 'child_process';
-import Anthropic from '@anthropic-ai/sdk';
 import { log } from './logger';
 import { getSetting, setSetting } from './store';
 import type { Project } from './store';
 import { listRecordings } from './recording-manager';
-import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
+import { runClaude } from './claude-cli';
 
 function getOutputDir(): string {
   return getSetting('recordingOutputFolder') || path.join(os.homedir(), 'Documents', 'MeetingMind');
@@ -244,72 +242,6 @@ Important guidelines:
 - Keep the summary focused and scannable`;
 }
 
-async function generateViaCLI(prompt: string): Promise<string> {
-  const claudePath = getClaudePath();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
-
-  return new Promise((resolve, reject) => {
-    const args = ['-p', '--model', model, '--output-format', 'text'];
-    const proc = spawn(claudePath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: getShellEnv(),
-    });
-
-    let fullOutput = '';
-    let stderrOutput = '';
-
-    proc.stdout.on('data', (data: Buffer) => {
-      const text = data.toString();
-      fullOutput += text;
-      sendToRenderer('project-summary:stream', text);
-    });
-
-    proc.stderr.on('data', (data: Buffer) => {
-      stderrOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0 && fullOutput.trim().length > 0) {
-        resolve(fullOutput);
-      } else {
-        const errMsg = stderrOutput.trim() || `claude CLI exited with code ${code}`;
-        reject(new Error(errMsg));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Could not start claude CLI: ${err.message}`));
-    });
-
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-  });
-}
-
-async function generateViaAPI(prompt: string): Promise<string> {
-  const apiKey = await getAnthropicKey();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
-
-  const client = new Anthropic({ apiKey });
-  let fullOutput = '';
-
-  const stream = client.messages.stream({
-    model,
-    max_tokens: 8192,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      const text = event.delta.text;
-      fullOutput += text;
-      sendToRenderer('project-summary:stream', text);
-    }
-  }
-
-  return fullOutput;
-}
-
 export async function generateProjectSummary(
   projectId: string
 ): Promise<{ success: boolean; summary?: string; error?: string }> {
@@ -353,14 +285,12 @@ export async function generateProjectSummary(
       promptLength: prompt.length,
     });
 
-    const provider = getSetting('notesProvider') || 'cli';
-    let summary: string;
-
-    if (provider === 'cli') {
-      summary = await generateViaCLI(prompt);
-    } else {
-      summary = await generateViaAPI(prompt);
-    }
+    const { text: summary } = await runClaude({
+      label: 'project-summary',
+      prompt,
+      maxTokens: 32000,
+      onChunk: (text) => sendToRenderer('project-summary:stream', text),
+    });
 
     // Save summary to disk
     const projectDir = path.join(getProjectsDir(), projectId);
