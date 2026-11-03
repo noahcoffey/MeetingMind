@@ -148,6 +148,7 @@ const api = {
       'transcription:progress',
       'notes:stream',
       'notes:complete',
+      'notes:error',
       'crash-recovery',
       'highlights:stream',
       'highlights:complete',

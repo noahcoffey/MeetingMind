@@ -1,12 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { spawn } from 'child_process';
-import Anthropic from '@anthropic-ai/sdk';
 import { log } from './logger';
 import { getSetting } from './store';
 import { listRecordings } from './recording-manager';
-import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
+import { runClaude } from './claude-cli';
+import { LIGHT_MODEL } from './claude-models';
 
 export interface AnalyticsStats {
   totalRecordings: number;
@@ -202,51 +201,6 @@ export function getAnalyticsStats(): AnalyticsStats {
 
 const TRENDS_PROMPT = 'Based on these recent meeting summaries (titles, dates, durations, and tags), write a brief paragraph (3-5 sentences) analyzing meeting patterns and trends. Note any patterns in frequency, topics, or duration changes.';
 
-async function getTrendsViaCLI(prompt: string): Promise<string> {
-  const claudePath = getClaudePath();
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn(claudePath, ['-p', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'text'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: getShellEnv(),
-    });
-
-    let output = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data: Buffer) => { output += data.toString(); });
-    proc.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-
-    proc.on('close', (code) => {
-      if (code === 0 && output.trim()) {
-        resolve(output.trim());
-      } else {
-        reject(new Error(`claude CLI exited with code ${code}: ${stderr}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Failed to spawn claude CLI: ${err.message}`));
-    });
-
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-  });
-}
-
-async function getTrendsViaAPI(prompt: string): Promise<string> {
-  const apiKey = await getAnthropicKey();
-  const client = new Anthropic({ apiKey });
-
-  const response = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 500,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  return (response.content[0] as any).text?.trim() || '';
-}
-
 export async function generateTrendInsights(): Promise<string> {
   const outputDir = getOutputDir();
   const cachePath = path.join(outputDir, 'trends-cache.json');
@@ -279,14 +233,14 @@ export async function generateTrendInsights(): Promise<string> {
 
   const prompt = `${TRENDS_PROMPT}\n\nRecent meetings:\n${summaryLines.join('\n')}`;
 
-  const provider = getSetting('notesProvider') || 'cli';
-  let insights: string;
-
-  if (provider === 'cli') {
-    insights = await getTrendsViaCLI(prompt);
-  } else {
-    insights = await getTrendsViaAPI(prompt);
-  }
+  const insights = (await runClaude({
+    label: 'trends',
+    prompt,
+    model: LIGHT_MODEL,
+    maxTokens: 4000,
+    effort: 'low',
+    timeoutMs: 3 * 60 * 1000,
+  })).text.trim();
 
   // Cache the result
   try {

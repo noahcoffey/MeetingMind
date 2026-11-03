@@ -374,24 +374,37 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     setIsLoadingNotes(true);
     setNotesError(null);
 
-    // Replace stream listener for manual generation (shows chunks live)
-    window.meetingMind.removeAllListeners('notes:stream');
-
-    window.meetingMind.on('notes:stream', (chunk: unknown) => {
+    // Stream this meeting's notes in live. Main tags every chunk with the
+    // recording it belongs to, so a pipeline run for another meeting can't
+    // write into this one, and the listeners go away once this run ends.
+    const recordingId = selectedMeeting.id;
+    const unsubStream = window.meetingMind.on('notes:stream', (data: unknown) => {
+      const chunk = data as { recordingId: string; text: string };
+      if (chunk.recordingId !== recordingId) return;
+      if (selectedMeetingRef.current?.id !== recordingId) return;
       setIsLoadingNotes(false);
-      setNotesContent(prev => prev + (chunk as string));
+      setNotesContent(prev => prev + chunk.text);
     });
 
     // The persistent notes:complete listener in useEffect handles
     // refreshing the meeting data. We just need to clear streaming state.
-    const unsubManual = window.meetingMind.on('notes:complete', () => {
+    const finish = (data: unknown) => {
+      if ((data as { recordingId?: string })?.recordingId !== recordingId) return;
+      unsubStream();
+      unsubComplete();
+      unsubError();
+      if (selectedMeetingRef.current?.id !== recordingId) return;
       setIsStreaming(false);
       setIsLoadingNotes(false);
-      unsubManual();
-    });
+    };
+    const unsubComplete = window.meetingMind.on('notes:complete', finish);
+    const unsubError = window.meetingMind.on('notes:error', finish);
 
-    const result = await window.meetingMind.generateNotes(selectedMeeting.id);
+    const result = await window.meetingMind.generateNotes(recordingId);
     if (!result.success) {
+      unsubStream();
+      unsubComplete();
+      unsubError();
       setIsStreaming(false);
       setIsLoadingNotes(false);
       setNotesError(result.error || 'Unknown error');

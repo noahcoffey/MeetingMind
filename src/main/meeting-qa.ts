@@ -2,12 +2,10 @@ import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import Anthropic from '@anthropic-ai/sdk';
-import { spawn } from 'child_process';
 import { log } from './logger';
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
-import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
+import { runClaude } from './claude-cli';
 
 export interface QAEntry {
   id: string;
@@ -67,91 +65,32 @@ export function truncateTranscript(transcript: string): { text: string; truncate
   };
 }
 
-function buildQAPrompt(recording: any, notes: string, transcript: string, question: string): string {
+// The meeting material, kept byte-for-byte identical between questions about
+// the same meeting so it's served from the prompt cache after the first one.
+function buildQAContext(recording: any, notes: string, transcript: string): string {
   const userName = getSetting('userName') || 'the user';
   const { text: boundedTranscript, truncated } = truncateTranscript(transcript);
   const truncationNote = truncated
-    ? '\n\nNote: the transcript was too long to include in full — its middle section has been omitted. If the answer may depend on the omitted part, say so.'
+    ? '\nNote: the transcript was too long to include in full — its middle section has been omitted.\n'
     : '';
-  return `You are a helpful assistant answering questions about a specific meeting. Use the meeting notes and transcript below to answer the user's question accurately and concisely.
-
-If the answer is not found in the provided context, say so clearly rather than guessing.${truncationNote}
-
-Meeting: ${recording.title || recording.calendarEvent?.title || 'Untitled Meeting'}
+  return `Meeting: ${recording.title || recording.calendarEvent?.title || 'Untitled Meeting'}
 Date: ${new Date(recording.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 Recorded by: ${userName}
-
+${truncationNote}
 --- MEETING NOTES ---
 ${notes || '(No notes available)'}
 
 --- TRANSCRIPT ---
-${boundedTranscript || '(No transcript available)'}
+${boundedTranscript || '(No transcript available)'}`;
+}
+
+function buildQAPrompt(question: string, truncated: boolean): string {
+  return `You are a helpful assistant answering questions about a specific meeting. Use the meeting notes and transcript provided above to answer the user's question accurately and concisely.
+
+If the answer is not found in the provided context, say so clearly rather than guessing.${truncated ? ' The middle of the transcript was omitted for length; if the answer may depend on it, say so.' : ''}
 
 --- QUESTION ---
 ${question}`;
-}
-
-async function askViaCLI(prompt: string, qaId: string): Promise<string> {
-  const claudePath = getClaudePath();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
-
-  return new Promise((resolve, reject) => {
-    const proc = spawn(claudePath, ['-p', '--model', model, '--output-format', 'text'], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: getShellEnv(),
-    });
-
-    let fullAnswer = '';
-    let stderrOutput = '';
-
-    proc.stdout.on('data', (data: Buffer) => {
-      const text = data.toString();
-      fullAnswer += text;
-      sendToRenderer('qa:stream', { qaId, text });
-    });
-
-    proc.stderr.on('data', (data: Buffer) => {
-      stderrOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0 && fullAnswer.trim().length > 0) {
-        resolve(fullAnswer);
-      } else {
-        reject(new Error(stderrOutput.trim() || `claude CLI exited with code ${code}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(new Error(`Could not start claude CLI: ${err.message}`));
-    });
-
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-  });
-}
-
-async function askViaAPI(prompt: string, qaId: string): Promise<string> {
-  const apiKey = await getAnthropicKey();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
-  const client = new Anthropic({ apiKey });
-  let fullAnswer = '';
-
-  const stream = client.messages.stream({
-    model,
-    max_tokens: 4096,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      const text = event.delta.text;
-      fullAnswer += text;
-      sendToRenderer('qa:stream', { qaId, text });
-    }
-  }
-
-  return fullAnswer;
 }
 
 export async function askQuestion(
@@ -195,17 +134,16 @@ export async function askQuestion(
   }
 
   const qaId = `qa_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const prompt = buildQAPrompt(recording, notes, transcript, question);
+  const context = buildQAContext(recording, notes, transcript);
+  const prompt = buildQAPrompt(question, truncateTranscript(transcript).truncated);
 
   try {
-    const provider = getSetting('notesProvider') || 'cli';
-    let answer: string;
-
-    if (provider === 'cli') {
-      answer = await askViaCLI(prompt, qaId);
-    } else {
-      answer = await askViaAPI(prompt, qaId);
-    }
+    const { text: answer } = await runClaude({
+      label: 'qa',
+      context,
+      prompt,
+      onChunk: (text) => sendToRenderer('qa:stream', { qaId, recordingId, text }),
+    });
 
     const entry: QAEntry = {
       id: qaId,

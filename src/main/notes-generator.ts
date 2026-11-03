@@ -2,13 +2,12 @@ import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import Anthropic from '@anthropic-ai/sdk';
-import { spawn } from 'child_process';
 import { log } from './logger';
 import { getSetting } from './store';
 import { getRecording } from './recording-manager';
 import { autoTagRecording } from './tagger';
-import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
+import { runClaude } from './claude-cli';
+import { LIGHT_MODEL } from './claude-models';
 import { sendToMeetingHub } from './meetinghub';
 import { clearSpeakerReview } from './speaker-review';
 
@@ -133,81 +132,12 @@ function sendToRenderer(channel: string, data: unknown): void {
   }
 }
 
-// Generate notes via Claude Code CLI (uses subscription, not API credits)
-async function generateNotesViaCLI(prompt: string): Promise<string> {
-  const claudePath = getClaudePath();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
+// Recordings with a notes run in flight, so a second click (or the pipeline
+// and a button at once) can't start another and race it to notes.md.
+const generating = new Set<string>();
 
-  log('info', 'Generating notes via Claude CLI', { claudePath, model });
-
-  return new Promise((resolve, reject) => {
-    const args = ['-p', '--model', model, '--output-format', 'text'];
-    const proc = spawn(claudePath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: getShellEnv(),
-    });
-
-    let fullNotes = '';
-    let stderrOutput = '';
-
-    proc.stdout.on('data', (data: Buffer) => {
-      const text = data.toString();
-      fullNotes += text;
-      sendToRenderer('notes:stream', text);
-    });
-
-    proc.stderr.on('data', (data: Buffer) => {
-      stderrOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0 && fullNotes.trim().length > 0) {
-        resolve(fullNotes);
-      } else {
-        const errMsg = stderrOutput.trim() || `claude CLI exited with code ${code}`;
-        log('error', 'Claude CLI failed', { code, stderr: stderrOutput });
-        reject(new Error(errMsg));
-      }
-    });
-
-    proc.on('error', (err) => {
-      log('error', 'Failed to spawn claude CLI', err);
-      reject(new Error(
-        `Could not start claude CLI: ${err.message}. ` +
-        'Make sure Claude Code is installed (npm install -g @anthropic-ai/claude-code) ' +
-        'and the "claude" command is in your PATH.'
-      ));
-    });
-
-    // Write the prompt to stdin
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-  });
-}
-
-// Generate notes via Anthropic API (uses API credits)
-async function generateNotesViaAPI(prompt: string): Promise<string> {
-  const apiKey = await getAnthropicKey();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
-
-  const client = new Anthropic({ apiKey });
-  let fullNotes = '';
-
-  const stream = client.messages.stream({
-    model,
-    max_tokens: 4096,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      const text = event.delta.text;
-      fullNotes += text;
-      sendToRenderer('notes:stream', text);
-    }
-  }
-
-  return fullNotes;
+export function isGeneratingNotes(recordingId: string): boolean {
+  return generating.has(recordingId);
 }
 
 export async function generateNotes(recordingId: string): Promise<{ success: boolean; error?: string }> {
@@ -220,6 +150,11 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
   if (!fs.existsSync(transcriptPath)) {
     return { success: false, error: 'Transcript not found. Please transcribe first.' };
   }
+
+  if (generating.has(recordingId)) {
+    return { success: false, error: 'Notes are already being generated for this meeting.' };
+  }
+  generating.add(recordingId);
 
   const provider = getSetting('notesProvider') || 'cli';
 
@@ -237,10 +172,15 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
     updateRecordingStatus(recordingId, 'generating');
     let fullNotes: string;
 
-    if (provider === 'cli') {
-      fullNotes = await generateNotesViaCLI(prompt);
-    } else {
-      fullNotes = await generateNotesViaAPI(prompt);
+    const result = await runClaude({
+      label: 'notes',
+      prompt,
+      maxTokens: 32000,
+      onChunk: (text) => sendToRenderer('notes:stream', { recordingId, text }),
+    });
+    fullNotes = result.text;
+    if (result.truncated) {
+      fullNotes += '\n\n> **Note:** these notes were cut off because they reached the length limit. Regenerate, or ask a question to fill in what\'s missing.\n';
     }
 
     // Save notes
@@ -310,7 +250,10 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
     updateRecordingStatus(recordingId, 'transcribed');
     const providerLabel = provider === 'cli' ? 'Claude CLI' : 'Anthropic API';
     const errorMsg = `[${providerLabel}] ${err.message}`;
+    sendToRenderer('notes:error', { recordingId, error: errorMsg });
     return { success: false, error: errorMsg };
+  } finally {
+    generating.delete(recordingId);
   }
 }
 
@@ -362,37 +305,15 @@ export async function suggestTitle(recordingId: string): Promise<string> {
     const summary = notes.substring(0, 1000);
     const titlePrompt = `Based on these meeting notes, suggest a concise 4-6 word title for this meeting. Return ONLY the title, no quotes or punctuation.\n\n${summary}`;
 
-    const provider = getSetting('notesProvider') || 'cli';
-
-    if (provider === 'cli') {
-      const claudePath = getClaudePath();
-      const title = await new Promise<string>((resolve, reject) => {
-        const proc = spawn(claudePath, ['-p', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'text'], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: getShellEnv(),
-        });
-        let output = '';
-        proc.stdout.on('data', (data: Buffer) => { output += data.toString(); });
-        proc.on('close', (code) => {
-          if (code === 0 && output.trim()) resolve(output.trim());
-          else resolve('Untitled Meeting');
-        });
-        proc.on('error', () => resolve('Untitled Meeting'));
-        proc.stdin.write(titlePrompt);
-        proc.stdin.end();
-      });
-      return title;
-    } else {
-      const apiKey = await getAnthropicKey();
-      const client = new Anthropic({ apiKey });
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 50,
-        messages: [{ role: 'user', content: titlePrompt }],
-      });
-      const title = (response.content[0] as any).text?.trim() || 'Untitled Meeting';
-      return title;
-    }
+    const { text } = await runClaude({
+      label: 'title',
+      prompt: titlePrompt,
+      model: LIGHT_MODEL,
+      maxTokens: 2000,
+      effort: 'low',
+      timeoutMs: 2 * 60 * 1000,
+    });
+    return text.trim() || 'Untitled Meeting';
   } catch {
     return 'Untitled Meeting';
   }
@@ -421,36 +342,15 @@ Return ONLY valid JSON in this format: {"label": "...", "explanation": "..."}
 Transcript:
 ${transcript}`;
 
-    const provider = getSetting('notesProvider') || 'cli';
-    let rawResponse: string;
-
-    if (provider === 'cli') {
-      const claudePath = getClaudePath();
-      rawResponse = await new Promise<string>((resolve, reject) => {
-        const proc = spawn(claudePath, ['-p', '--model', 'claude-haiku-4-5-20251001', '--output-format', 'text'], {
-          stdio: ['pipe', 'pipe', 'pipe'],
-          env: getShellEnv(),
-        });
-        let output = '';
-        proc.stdout.on('data', (data: Buffer) => { output += data.toString(); });
-        proc.on('close', (code) => {
-          if (code === 0 && output.trim()) resolve(output.trim());
-          else reject(new Error(`claude CLI exited with code ${code}`));
-        });
-        proc.on('error', (err) => reject(err));
-        proc.stdin.write(sentimentPrompt);
-        proc.stdin.end();
-      });
-    } else {
-      const apiKey = await getAnthropicKey();
-      const client = new Anthropic({ apiKey });
-      const response = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 100,
-        messages: [{ role: 'user', content: sentimentPrompt }],
-      });
-      rawResponse = (response.content[0] as any).text?.trim() || '';
-    }
+    const { text } = await runClaude({
+      label: 'sentiment',
+      prompt: sentimentPrompt,
+      model: LIGHT_MODEL,
+      maxTokens: 2000,
+      effort: 'low',
+      timeoutMs: 3 * 60 * 1000,
+    });
+    const rawResponse = text.trim();
 
     // Parse JSON — try direct parse first, then extract with regex
     let parsed: { label: string; explanation: string };

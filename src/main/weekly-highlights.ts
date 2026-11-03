@@ -2,12 +2,10 @@ import { BrowserWindow } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import Anthropic from '@anthropic-ai/sdk';
-import { spawn } from 'child_process';
 import { log } from './logger';
 import { getSetting } from './store';
 import { listRecordings, getRecording } from './recording-manager';
-import { getClaudePath, getShellEnv, getAnthropicKey } from './claude-cli';
+import { runClaude } from './claude-cli';
 
 function sendToRenderer(channel: string, data: unknown): void {
   const windows = BrowserWindow.getAllWindows();
@@ -162,79 +160,6 @@ Important guidelines:
 - Keep the report focused and scannable`;
 }
 
-async function generateViaCLI(prompt: string): Promise<string> {
-  const claudePath = getClaudePath();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
-
-  log('info', 'Generating weekly highlights via Claude CLI', { claudePath, model });
-
-  return new Promise((resolve, reject) => {
-    const args = ['-p', '--model', model, '--output-format', 'text'];
-    const proc = spawn(claudePath, args, {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: getShellEnv(),
-    });
-
-    let fullOutput = '';
-    let stderrOutput = '';
-
-    proc.stdout.on('data', (data: Buffer) => {
-      const text = data.toString();
-      fullOutput += text;
-      sendToRenderer('highlights:stream', text);
-    });
-
-    proc.stderr.on('data', (data: Buffer) => {
-      stderrOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0 && fullOutput.trim().length > 0) {
-        resolve(fullOutput);
-      } else {
-        const errMsg = stderrOutput.trim() || `claude CLI exited with code ${code}`;
-        log('error', 'Claude CLI failed for highlights', { code, stderr: stderrOutput });
-        reject(new Error(errMsg));
-      }
-    });
-
-    proc.on('error', (err) => {
-      log('error', 'Failed to spawn claude CLI for highlights', err);
-      reject(new Error(
-        `Could not start claude CLI: ${err.message}. ` +
-        'Make sure Claude Code is installed and the "claude" command is in your PATH.'
-      ));
-    });
-
-    proc.stdin.write(prompt);
-    proc.stdin.end();
-  });
-}
-
-async function generateViaAPI(prompt: string): Promise<string> {
-  const apiKey = await getAnthropicKey();
-  const model = getSetting('claudeModel') || 'claude-sonnet-4-6';
-
-  const client = new Anthropic({ apiKey });
-  let fullOutput = '';
-
-  const stream = client.messages.stream({
-    model,
-    max_tokens: 8192,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      const text = event.delta.text;
-      fullOutput += text;
-      sendToRenderer('highlights:stream', text);
-    }
-  }
-
-  return fullOutput;
-}
-
 export async function generateWeeklyHighlights(
   startDate: string,
   endDate: string
@@ -264,14 +189,12 @@ export async function generateWeeklyHighlights(
       promptLength: prompt.length,
     });
 
-    const provider = getSetting('notesProvider') || 'cli';
-    let report: string;
-
-    if (provider === 'cli') {
-      report = await generateViaCLI(prompt);
-    } else {
-      report = await generateViaAPI(prompt);
-    }
+    const { text: report } = await runClaude({
+      label: 'highlights',
+      prompt,
+      maxTokens: 32000,
+      onChunk: (text) => sendToRenderer('highlights:stream', text),
+    });
 
     // Save the report
     const outputDir = getSetting('recordingOutputFolder') || path.join(os.homedir(), 'Documents', 'MeetingMind');
