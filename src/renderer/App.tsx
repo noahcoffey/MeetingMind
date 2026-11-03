@@ -9,6 +9,7 @@ import HighlightsPage from './pages/HighlightsPage';
 import OnboardingFlow from './pages/OnboardingFlow';
 import type { BackgroundJob } from './components/PipelineWidget';
 import type { Project } from './types';
+import ConfirmDialog from './components/ConfirmDialog';
 
 type Page = 'record' | 'dictate' | 'meetings' | 'settings' | 'analytics' | 'highlights';
 
@@ -32,6 +33,7 @@ export default function App() {
   const [startRecordingSignal, setStartRecordingSignal] = useState(0);
   // A recording keeps running while you look at other pages; the sidebar shows it.
   const [recordingState, setRecordingState] = useState({ recording: false, paused: false });
+  const [projectToDelete, setProjectToDelete] = useState<{ id: string; name: string; meetingCount: number } | null>(null);
   const jobCleanupRef = useRef<Map<string, () => void>>(new Map());
   const jobExpiryRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -353,7 +355,18 @@ export default function App() {
     setProjects(prev => prev.map(p => p.id === id ? { ...p, name } : p));
   }
 
+  // Asks first (see the dialog below); this is what runs on confirm.
   async function handleProjectDelete(id: string) {
+    const project = projects.find(p => p.id === id);
+    let meetingCount = 0;
+    try {
+      meetingCount = (await window.meetingMind.getRecordingIndex()).filter(r => r.project === id).length;
+    } catch {}
+    setProjectToDelete({ id, name: project?.name || 'this project', meetingCount });
+  }
+
+  async function confirmProjectDelete(id: string) {
+    setProjectToDelete(null);
     await (window.meetingMind as any).deleteProject(id);
     setProjects(prev => prev.filter(p => p.id !== id));
     if (activeProjectFilter === id) handleProjectSelect(null);
@@ -393,6 +406,20 @@ export default function App() {
 
   return (
     <div className="app-layout">
+      {projectToDelete && (
+        <ConfirmDialog
+          title={`Delete project "${projectToDelete.name}"?`}
+          confirmLabel="Delete project"
+          danger
+          onCancel={() => setProjectToDelete(null)}
+          onConfirm={() => confirmProjectDelete(projectToDelete.id)}
+        >
+          {projectToDelete.meetingCount > 0
+            ? <>Its {projectToDelete.meetingCount} meeting{projectToDelete.meetingCount === 1 ? '' : 's'} stay in the notebook, no longer grouped. </>
+            : null}
+          The project's summary is deleted.
+        </ConfirmDialog>
+      )}
       <Sidebar
         currentPage={currentPage}
         onNavigate={handleNavigate}

@@ -883,6 +883,27 @@ body {
   background: var(--accent-blue-hover);
 }
 
+/* Confirmation dialog (components/ConfirmDialog.tsx) */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-backdrop);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+  padding: 24px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: var(--shadow-modal);
+}
+
 .btn-danger {
   background: var(--accent-primary);
   color: var(--text-on-accent);

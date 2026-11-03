@@ -9,6 +9,7 @@ import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import MonthCalendar from '../components/MonthCalendar';
 import ProgressBar from '../components/ProgressBar';
+import ConfirmDialog from '../components/ConfirmDialog';
 import {
   DayKey,
   countsByDay,
@@ -60,6 +61,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<'regenerate' | 'retranscribe' | null>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showCostData, setShowCostData] = useState(false);
   const [meetinghubVisible, setMeetinghubVisible] = useState(false);
@@ -1010,7 +1012,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                           <>
                             <button
                               className="actions-dropdown-item"
-                              onClick={() => { setShowActionsMenu(false); handleTranscribe(); }}
+                              onClick={() => { setShowActionsMenu(false); setPendingConfirm('retranscribe'); }}
                               disabled={isTranscribing}
                             >
                               Re-transcribe
@@ -1031,7 +1033,12 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                                 {(selectedMeeting as any).meetinghub?.status === 'sent' ? 'Re-send to MeetingHub' : 'Send to MeetingHub'}
                               </button>
                             )}
-                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleGenerateNotes(); }} disabled={isStreaming}>
+                            <button className="actions-dropdown-item" onClick={() => {
+                              setShowActionsMenu(false);
+                              // Only ask when there are notes to lose.
+                              if (notesContent.trim()) setPendingConfirm('regenerate');
+                              else handleGenerateNotes();
+                            }} disabled={isStreaming}>
                               Regenerate Notes
                             </button>
                             <button className="actions-dropdown-item" onClick={async () => {
@@ -1659,42 +1666,42 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* Confirmations */}
       {showDeleteConfirm && selectedMeeting && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'var(--overlay-backdrop)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-        }} onClick={() => setShowDeleteConfirm(false)}>
-          <div style={{
-            background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)',
-            border: '1px solid var(--border-color)', padding: 24,
-            width: 400, maxWidth: '90vw', boxShadow: 'var(--shadow-modal)',
-          }} onClick={e => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 20 }}>
-              <div style={{ color: 'var(--accent-primary)', flexShrink: 0, marginTop: 2 }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-              </div>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Delete Meeting?</div>
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  This will permanently delete <strong>{selectedMeeting.title || 'this meeting'}</strong> and
-                  all associated files (audio, transcript, and notes). This cannot be undone.
-                </div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button className="btn btn-ghost" onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-              <button className="btn" onClick={handleDeleteMeeting}
-                style={{ background: 'var(--accent-primary)', color: 'var(--text-on-accent)' }}>
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Delete meeting?"
+          confirmLabel="Delete"
+          danger
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={handleDeleteMeeting}
+        >
+          This will permanently delete <strong>{selectedMeeting.title || 'this meeting'}</strong> and
+          all associated files (audio, transcript, and notes). This cannot be undone.
+        </ConfirmDialog>
+      )}
+      {pendingConfirm === 'regenerate' && selectedMeeting && (
+        <ConfirmDialog
+          title="Replace these notes?"
+          confirmLabel="Regenerate"
+          danger
+          onCancel={() => setPendingConfirm(null)}
+          onConfirm={() => { setPendingConfirm(null); handleGenerateNotes(); }}
+        >
+          New notes will be written from the transcript and replace the current ones,
+          including any edits you've made to them.
+        </ConfirmDialog>
+      )}
+      {pendingConfirm === 'retranscribe' && selectedMeeting && (
+        <ConfirmDialog
+          title="Re-transcribe this meeting?"
+          confirmLabel="Re-transcribe"
+          onCancel={() => setPendingConfirm(null)}
+          onConfirm={() => { setPendingConfirm(null); handleTranscribe(); }}
+        >
+          The audio is sent for transcription again and the new transcript replaces the
+          current one. Speaker names you've set may no longer line up, and a cloud
+          provider charges for the run. Your notes stay as they are until you regenerate them.
+        </ConfirmDialog>
       )}
 
       {/* Toast */}
