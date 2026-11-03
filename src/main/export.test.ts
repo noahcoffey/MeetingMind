@@ -14,9 +14,11 @@ jest.mock('./recording-manager', () => ({
 jest.mock('electron', () => ({
   clipboard: {
     // copyNotesToClipboard writes rich content (plain text + HTML) via write().
-    write: jest.fn(),
-    writeText: jest.fn(),
+    write: jest.fn(() => Promise.resolve()),
+    writeText: jest.fn(() => Promise.resolve()),
   },
+  // Stand-in for Electron's ClipboardItem: keeps what it was given.
+  ClipboardItem: class { constructor(public items: Record<string, string>) {} },
   shell: {
     openExternal: jest.fn(),
   },
@@ -45,7 +47,7 @@ describe('copyNotesToClipboard', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  test('copies notes content to clipboard', () => {
+  test('copies notes content to clipboard', async () => {
     const notesContent = '# Meeting Notes\n\nAction items discussed.';
     fs.writeFileSync(path.join(tempDir, 'notes.md'), notesContent);
 
@@ -54,28 +56,30 @@ describe('copyNotesToClipboard', () => {
       audioPath: path.join(tempDir, 'audio.m4a'),
     });
 
-    const result = copyNotesToClipboard('rec-1');
+    const result = await copyNotesToClipboard('rec-1');
     expect(result.success).toBe(true);
     // Rich copy: plain text plus an HTML rendering of the markdown.
-    expect(mockWrite).toHaveBeenCalledWith(expect.objectContaining({ text: notesContent }));
+    const [items] = mockWrite.mock.calls[0] as unknown as [{ items: Record<string, string> }[]];
+    expect(items[0].items['text/plain']).toBe(notesContent);
+    expect(items[0].items['text/html']).toContain('<h1>');
   });
 
-  test('returns error when recording not found', () => {
+  test('returns error when recording not found', async () => {
     mockGetRecording.mockReturnValue(null);
 
-    const result = copyNotesToClipboard('nonexistent');
+    const result = await copyNotesToClipboard('nonexistent');
     expect(result.success).toBe(false);
     expect(result.error).toContain('not found');
   });
 
-  test('returns error when notes file missing', () => {
+  test('returns error when notes file missing', async () => {
     mockGetRecording.mockReturnValue({
       id: 'rec-1',
       audioPath: path.join(tempDir, 'audio.m4a'),
     });
     // No notes.md file created
 
-    const result = copyNotesToClipboard('rec-1');
+    const result = await copyNotesToClipboard('rec-1');
     expect(result.success).toBe(false);
   });
 });
