@@ -53,6 +53,7 @@ export default function RecordingSettings({
   useEffect(() => {
     if (setupState !== 'running') return;
     const off = window.meetingMind.on('transcription:progress', (data: any) => {
+      if (data?.recordingId) return; // a meeting's transcription, not this setup
       if (data?.message) setSetupMessage(data.message);
     });
     return () => { if (typeof off === 'function') off(); };

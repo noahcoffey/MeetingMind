@@ -8,6 +8,7 @@ import SpeakerPanel from '../components/SpeakerPanel';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
 import MarkdownRenderer from '../components/MarkdownRenderer';
 import MonthCalendar from '../components/MonthCalendar';
+import ProgressBar from '../components/ProgressBar';
 import {
   DayKey,
   countsByDay,
@@ -48,6 +49,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [isStreaming, setIsStreaming] = useState(false);
   const [transcriptionStatus, setTranscriptionStatus] = useState('');
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptionProgress, setTranscriptionProgress] = useState<number | undefined>(undefined);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -127,8 +129,13 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     });
 
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
-      const { status, message } = data as { status: string; message: string };
+      const { recordingId, status, message, progress } = data as { recordingId?: string; status: string; message: string; progress?: number };
+      // Only the open meeting's progress belongs on this page. (Events with no
+      // recording id are WhisperX setup, which has its own screen.)
+      if (!recordingId || recordingId !== selectedMeetingRef.current?.id) return;
       setTranscriptionStatus(message);
+      setTranscriptionProgress(progress);
+      if (status !== 'complete' && status !== 'error') setIsTranscribing(true);
       if (status === 'complete') {
         setIsTranscribing(false);
         setTranscriptionStatus('');
@@ -308,6 +315,8 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     setNotesContent('');
     setUtterances([]);
     setTranscriptionStatus('');
+    setIsTranscribing(rec.status === 'transcribing');
+    setTranscriptionProgress(undefined);
     setIsStreaming(false);
     setIsLoadingNotes(false);
     setDetailTab('notes');
@@ -359,6 +368,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   async function handleTranscribe(opts?: { forceNormalize?: boolean }) {
     if (!selectedMeeting) return;
     setIsTranscribing(true);
+    setTranscriptionProgress(undefined);
     setTranscriptionStatus(opts?.forceNormalize ? 'Normalizing audio, then transcribing...' : 'Starting transcription...');
     const result = await window.meetingMind.startTranscription(selectedMeeting.id, opts);
     if (!result.success) {
@@ -1231,9 +1241,14 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                   <div className="pipeline-spinner" style={{ margin: '0 auto 12px' }} />
                   <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 4 }}>Transcribing Audio</div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{transcriptionStatus}</div>
-                  <div style={{ marginTop: 12, height: 4, background: 'var(--bg-input)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div className="progress-bar-indeterminate" />
+                  <div style={{ marginTop: 12 }}>
+                    <ProgressBar value={transcriptionProgress} label="Transcription progress" />
                   </div>
+                  {typeof transcriptionProgress === 'number' && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
+                      {Math.round(transcriptionProgress)}%
+                    </div>
+                  )}
                 </div>
               )}
 

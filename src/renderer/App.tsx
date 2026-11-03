@@ -136,15 +136,14 @@ export default function App() {
     };
     setBackgroundJobs(prev => [...prev, newJob]);
 
-    // Set up IPC listeners scoped to this job
-    // Progress events carry no recording id, so only a job that is actually
-    // transcribing listens to them; a parked or generating job would otherwise
-    // pick up another recording's chatter.
+    // Set up IPC listeners scoped to this job. Progress events say which
+    // recording they're for, so only this job's own updates land here.
     const unsubProgress = window.meetingMind.on('transcription:progress', (data: unknown) => {
-      const { status, message } = data as { status: string; message: string };
+      const { recordingId: id, status, message, progress } = data as { recordingId?: string; status: string; message: string; progress?: number };
+      if (id !== recordingId) return;
       setBackgroundJobs(prev => prev.map(j =>
         j.recordingId === recordingId && j.stage === 'transcribing'
-          ? { ...j, message, stage: status === 'error' ? 'error' : j.stage }
+          ? { ...j, message, progress, stage: status === 'error' ? 'error' : j.stage }
           : j
       ));
     });

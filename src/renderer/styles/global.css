@@ -1817,6 +1817,19 @@ body {
 }
 
 /* Indeterminate progress bar */
+.progress-track {
+  background: var(--bg-input);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent-blue);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
 .progress-bar-indeterminate {
   height: 100%;
   width: 40%;
