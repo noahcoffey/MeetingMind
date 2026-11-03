@@ -294,6 +294,30 @@ export default function RecordingSettings({
           Loudnorm is slower but produces a more consistent loudness target. Peak normalization just boosts gain so the loudest sample hits -1 dBFS.
         </div>
       </div>
+
+      <div className="form-group">
+        <label className="form-label" htmlFor="retention-days">Delete audio after</label>
+        <select
+          id="retention-days"
+          className="form-select"
+          value={String(typeof settings.retentionDays === 'number' ? settings.retentionDays : 60)}
+          onChange={e => updateSetting('retentionDays', Number(e.target.value))}
+        >
+          {!RETENTION_CHOICES.includes(settings.retentionDays ?? 60) && (
+            <option value={String(settings.retentionDays)}>{settings.retentionDays} days</option>
+          )}
+          {RETENTION_CHOICES.map(days => (
+            <option key={days} value={String(days)}>{days === 0 ? 'Never — keep all audio' : `${days} days`}</option>
+          ))}
+        </select>
+        <div className="form-hint">
+          Audio older than this is deleted to save space; the transcript, notes, speakers and Q&amp;A are kept,
+          so the meeting stays searchable. Without audio, a meeting can't be played back or re-transcribed.
+          Meetings that were never transcribed keep their audio. Runs at launch and once a day.
+        </div>
+      </div>
     </>
   );
 }
+
+const RETENTION_CHOICES = [30, 60, 90, 180, 365, 0];

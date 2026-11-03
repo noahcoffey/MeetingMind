@@ -10,6 +10,7 @@ import { getRecordingStatus, stopRecordingExternally, pauseRecording, resumeReco
 import { startControlServer, stopControlServer } from './control-server';
 import { isSafeExternalUrl } from './ipc-guard';
 import { requestRecordingStart, setRecordStartDeps } from './record-start';
+import { startRetentionSchedule } from './retention';
 
 // Set app name so dock/taskbar shows "MeetingMind" instead of "Electron" in dev
 app.name = 'MeetingMind';
@@ -261,6 +262,10 @@ app.whenReady().then(async () => {
   } catch (err) {
     log('error', 'Resetting interrupted jobs failed', err);
   }
+
+  // Delete the audio of meetings past the retention window (Settings >
+  // Recording); transcripts and notes are kept.
+  startRetentionSchedule();
 
   createWindow();
 

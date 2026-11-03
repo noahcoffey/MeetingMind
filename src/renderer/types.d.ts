@@ -129,6 +129,8 @@ export interface Recording {
   calendarEventId?: string;
   calendarEventProvider?: 'google' | 'microsoft' | 'ics';
   userContext?: string;
+  /** When retention deleted this meeting's audio. The transcript and notes remain. */
+  audioRemovedAt?: string;
   /** How the recording was made. Absent on older recordings, which were all live. */
   source?: 'live' | 'import';
   meetinghub?: {

@@ -145,6 +145,11 @@ export function setupIpcHandlers(): void {
       log('warn', `Blocked openInFinder outside recordings dir: ${filePath}`);
       return;
     }
+    // The audio may have been removed by retention; show its folder instead.
+    if (!fs.existsSync(filePath) && fs.existsSync(path.dirname(filePath))) {
+      shell.openPath(path.dirname(filePath));
+      return;
+    }
     shell.showItemInFolder(filePath);
   });
 

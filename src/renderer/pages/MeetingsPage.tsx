@@ -351,7 +351,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       setQaEntries(questions || []);
 
       // Load audio for the player
-      if (freshRec.audioPath) {
+      if (freshRec.audioPath && !freshRec.audioRemovedAt) {
         audioControls.load(`media://${freshRec.audioPath}`);
       }
     }
@@ -1008,7 +1008,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                     </button>
                     {showActionsMenu && (
                       <div className="actions-dropdown">
-                        {(selectedMeeting.status === 'transcribed' || selectedMeeting.status === 'complete') && (
+                        {(selectedMeeting.status === 'transcribed' || selectedMeeting.status === 'complete') && !selectedMeeting.audioRemovedAt && (
                           <>
                             <button
                               className="actions-dropdown-item"
@@ -1228,7 +1228,13 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
               </div>
 
               {/* Audio Player — pinned */}
-              {selectedMeeting.audioPath && (
+              {selectedMeeting.audioRemovedAt && (
+                <div className="form-hint" style={{ flexShrink: 0, marginBottom: 12 }}>
+                  Audio removed {new Date(selectedMeeting.audioRemovedAt).toLocaleDateString()} by the retention
+                  setting. The transcript and notes are kept.
+                </div>
+              )}
+              {selectedMeeting.audioPath && !selectedMeeting.audioRemovedAt && (
                 <div style={{ flexShrink: 0, marginBottom: 12 }}>
                   <AudioPlayer
                     isPlaying={audioState.isPlaying}
@@ -1432,7 +1438,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                   isGenerating={isStreaming}
                   onGenerateNotes={handleGenerateNotesFromSpeakers}
                   onSuggestNames={handleSuggestSpeakerNames}
-                  onPlaySegment={selectedMeeting.audioPath ? audioControls.playRange : undefined}
+                  onPlaySegment={selectedMeeting.audioPath && !selectedMeeting.audioRemovedAt ? audioControls.playRange : undefined}
                   currentTime={audioState.currentTime}
                   isPlaying={audioState.isPlaying}
                 />

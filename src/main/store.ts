@@ -35,6 +35,8 @@ export interface AppSettings {
   // Pause the automatic pipeline after transcription until the speakers have
   // names, so notes (and the MeetingHub push) attribute things to real people.
   speakerReviewBeforeNotes: boolean;
+  /** Delete a meeting's audio this many days after it was recorded (0 = keep forever). Transcript and notes are kept. */
+  retentionDays: number;
   // Ask Claude to propose who each diarized speaker is, from the attendee list
   // and the transcript. When every speaker resolves with high confidence the
   // review step is skipped.
@@ -82,6 +84,7 @@ const defaults: AppSettings = {
   notesPromptTemplate: '',
   autoTranscribe: false,
   speakerReviewBeforeNotes: true,
+  retentionDays: 60,
   speakerIdentifyWithClaude: true,
   icsCalendarUrl: '',
   icsCalendarEnabled: false,

@@ -63,6 +63,9 @@ export function checkSettingWrite(key: unknown, value: unknown, knownKeys: Set<s
   if (key === 'meetinghubBaseUrl' && !isAllowedMeetingHubUrl(value)) {
     return 'MeetingHub URL must use https://';
   }
+  if (key === 'retentionDays' && !(typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 3650)) {
+    return 'Retention must be a whole number of days';
+  }
   if ((key === 'recordingOutputFolder' || key === 'obsidianVaultPath') && value !== '' &&
       (typeof value !== 'string' || !value.startsWith('/') || value === '/')) {
     return `${key} must be an absolute folder path`;
