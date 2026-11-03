@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeImage, protocol, net, systemPreferences } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, nativeImage, protocol, net, shell, systemPreferences } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { pathToFileURL } from 'url';
@@ -8,6 +8,7 @@ import { initializeLogger, log } from './logger';
 import { createTray, destroyTray, updateTray } from './tray';
 import { getRecordingStatus, startRecording, stopRecordingExternally, pauseRecording, resumeRecording, recoverCrashedSessions, isPathInsideRecordingsDir } from './recording-manager';
 import { startControlServer, stopControlServer } from './control-server';
+import { isSafeExternalUrl } from './ipc-guard';
 
 // Set app name so dock/taskbar shows "MeetingMind" instead of "Electron" in dev
 app.name = 'MeetingMind';
@@ -30,6 +31,27 @@ protocol.registerSchemesAsPrivileged([
 
 let mainWindow: BrowserWindow | null = null;
 
+// The window only ever shows our own page. A link, a dropped file or a
+// window.open must not replace it — a page loaded in its place would inherit
+// the preload API. Web links open in the browser instead.
+function lockDownNavigation(contents: Electron.WebContents): void {
+  contents.on('will-navigate', (event, url) => {
+    if (url === contents.getURL()) return; // a reload of our own page
+    event.preventDefault();
+    log('warn', 'Blocked in-app navigation', { url: url.slice(0, 200) });
+    if (isSafeExternalUrl(url)) shell.openExternal(url);
+  });
+  contents.on('will-redirect', (event, url) => {
+    event.preventDefault();
+    log('warn', 'Blocked in-app redirect', { url: url.slice(0, 200) });
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isSafeExternalUrl(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  contents.on('will-attach-webview', (event) => event.preventDefault());
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -44,6 +66,8 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   });
+
+  lockDownNavigation(mainWindow.webContents);
 
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:9000');
@@ -182,7 +206,12 @@ app.whenReady().then(async () => {
       '.m4a': 'audio/mp4', '.mp4': 'audio/mp4', '.wav': 'audio/wav',
       '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.webm': 'audio/webm',
     };
-    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    // Audio only: whatever the folder setting says, this is never a way to read other files.
+    if (!mimeTypes[ext]) {
+      log('warn', `Blocked media request for a non-audio file: ${filePath}`);
+      return new Response('Forbidden', { status: 403 });
+    }
+    const contentType = mimeTypes[ext];
 
     const rangeHeader = request.headers.get('range');
     if (rangeHeader) {

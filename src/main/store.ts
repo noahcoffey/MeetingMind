@@ -131,6 +131,11 @@ export function initializeStore(): void {
   }
 }
 
+/** Every real setting name, for checking writes that come from the renderer. */
+export function settingKeys(): Set<string> {
+  return new Set(Object.keys(defaults));
+}
+
 export function getStore(): Store<AppSettings> {
   return store;
 }

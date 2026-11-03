@@ -8,6 +8,7 @@ import { getSetting } from './store';
 import { writeJsonAtomic } from './fs-utils';
 import { checkCrashRecovery, RecoverableSession } from './recorder';
 import { spawn, ChildProcess } from 'child_process';
+import { isSafePathSegment } from './ipc-guard';
 
 const CHUNK_DURATION_SEC = 300; // 5 minutes
 const MANIFEST_INTERVAL_MS = 30000; // 30 seconds
@@ -989,6 +990,7 @@ export function listRecordingIndex(): RecordingIndexEntry[] {
 }
 
 export function getRecording(id: string): any | null {
+  if (!isSafePathSegment(id)) return null;
   const manifestPath = path.join(getOutputDir(), id, 'manifest.json');
   if (!fs.existsSync(manifestPath)) return null;
   try {
@@ -999,6 +1001,9 @@ export function getRecording(id: string): any | null {
 }
 
 export function deleteRecording(id: string): { success: boolean; error?: string } {
+  // This is a recursive delete: the id must name one folder inside the
+  // recordings folder and nothing else.
+  if (!isSafePathSegment(id)) return { success: false, error: 'Invalid recording id' };
   const recordingDir = path.join(getOutputDir(), id);
   if (!fs.existsSync(recordingDir)) {
     return { success: false, error: 'Recording not found' };

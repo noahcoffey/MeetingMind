@@ -19,6 +19,12 @@ const SECTIONS: { key: SettingsSection; label: string; icon: string }[] = [
   { key: 'meetinghub', label: 'MeetingHub', icon: 'M22 2 11 13 M22 2 15 22 11 13 2 9 22 2Z' },
 ];
 
+const SETTING_LABELS: Record<string, string> = {
+  meetinghubBaseUrl: 'MeetingHub URL (must use https://)',
+  recordingOutputFolder: 'Recordings folder',
+  obsidianVaultPath: 'Obsidian vault folder',
+};
+
 interface SettingsPageProps {
   onSettingsChange: () => void;
   initialSection?: SettingsSection;
@@ -40,6 +46,7 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
   const [hasHfToken, setHasHfToken] = useState(false);
   const [hasMeetinghubKey, setHasMeetinghubKey] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => { loadSettings(); }, []);
 
@@ -47,21 +54,25 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
     try {
       const s = await window.meetingMind.getSettings();
       setSettings(s);
-      setHasAssemblyKey(!!(await window.meetingMind.getApiKey('assemblyai')));
-      setHasAnthropicKey(!!(await window.meetingMind.getApiKey('anthropic')));
-      setHasOpenaiKey(!!(await window.meetingMind.getApiKey('openai')));
-      setHasDeepgramKey(!!(await window.meetingMind.getApiKey('deepgram')));
-      setHasHfToken(!!(await window.meetingMind.getApiKey('huggingface')));
-      setHasMeetinghubKey(!!(await window.meetingMind.getApiKey('meetinghub')));
+      setHasAssemblyKey(await window.meetingMind.hasApiKey('assemblyai'));
+      setHasAnthropicKey(await window.meetingMind.hasApiKey('anthropic'));
+      setHasOpenaiKey(await window.meetingMind.hasApiKey('openai'));
+      setHasDeepgramKey(await window.meetingMind.hasApiKey('deepgram'));
+      setHasHfToken(await window.meetingMind.hasApiKey('huggingface'));
+      setHasMeetinghubKey(await window.meetingMind.hasApiKey('meetinghub'));
     } catch {
       console.error('Failed to load settings');
     }
   }
 
   async function handleSave() {
+    const rejected: string[] = [];
     for (const [key, value] of Object.entries(settings)) {
-      await window.meetingMind.setSetting(key, value);
+      if (await window.meetingMind.setSetting(key, value) === false) rejected.push(key);
     }
+    setSaveError(rejected.length
+      ? `Not saved: ${rejected.map(k => SETTING_LABELS[k] || k).join(', ')}. Check the value and try again.`
+      : null);
     if (assemblyAiKey) { await window.meetingMind.setApiKey('assemblyai', assemblyAiKey); setHasAssemblyKey(true); setAssemblyAiKey(''); }
     if (anthropicKey) { await window.meetingMind.setApiKey('anthropic', anthropicKey); setHasAnthropicKey(true); setAnthropicKey(''); }
     if (openaiKey) { await window.meetingMind.setApiKey('openai', openaiKey); setHasOpenaiKey(true); setOpenaiKey(''); }
@@ -175,6 +186,11 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
 
           {/* Save bar */}
           <div style={{ flexShrink: 0, padding: '12px 0', maxWidth: 640 }}>
+            {saveError && (
+              <div className="form-hint" role="alert" style={{ color: 'var(--accent-primary)', marginBottom: 8 }}>
+                {saveError}
+              </div>
+            )}
             <button className="btn btn-primary" onClick={handleSave} style={{ width: '100%' }}>
               {saved ? 'Saved!' : 'Save Settings'}
             </button>

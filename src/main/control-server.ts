@@ -75,8 +75,12 @@ function json(res: ServerResponse, status: number, body: unknown): void {
 
 function authorized(req: IncomingMessage): boolean {
   const supplied = req.headers[TOKEN_HEADER];
-  if (typeof supplied !== 'string' || supplied.length !== token.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(token));
+  if (typeof supplied !== 'string') return false;
+  // Compare bytes, not characters: a non-ASCII header with the right character
+  // count would otherwise make timingSafeEqual throw on a length mismatch.
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(token);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
 function statusBody(): Record<string, unknown> {

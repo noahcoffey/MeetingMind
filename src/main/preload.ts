@@ -6,7 +6,7 @@ const api = {
   setSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
 
   // Secure storage (keytar)
-  getApiKey: (service: string) => ipcRenderer.invoke('keytar:get', service),
+  hasApiKey: (service: string) => ipcRenderer.invoke('keytar:has', service),
   setApiKey: (service: string, value: string) => ipcRenderer.invoke('keytar:set', service, value),
   deleteApiKey: (service: string) => ipcRenderer.invoke('keytar:delete', service),
 

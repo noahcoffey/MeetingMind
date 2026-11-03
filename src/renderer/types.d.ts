@@ -26,7 +26,8 @@ export interface DictationResult {
 export interface MeetingMindAPI {
   getSettings: () => Promise<Record<string, unknown>>;
   setSetting: (key: string, value: unknown) => Promise<boolean>;
-  getApiKey: (service: string) => Promise<string | null>;
+  /** Whether a key is saved. Keys never come back to the renderer. */
+  hasApiKey: (service: string) => Promise<boolean>;
   setApiKey: (service: string, value: string) => Promise<boolean>;
   deleteApiKey: (service: string) => Promise<boolean>;
   getAudioDevices: () => Promise<MediaDeviceInfo[]>;
