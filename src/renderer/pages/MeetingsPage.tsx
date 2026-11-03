@@ -1,24 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Recording, Project, RecordingIndexEntry } from '../types';
-import TagEditor from '../components/TagEditor';
-import TranscriptViewer from '../components/TranscriptViewer';
 import AudioPlayer from '../components/AudioPlayer';
-import SearchBar from '../components/SearchBar';
 import SpeakerPanel from '../components/SpeakerPanel';
 import { useAudioPlayer } from '../hooks/useAudioPlayer';
-import MarkdownRenderer from '../components/MarkdownRenderer';
-import MonthCalendar from '../components/MonthCalendar';
 import ProgressBar from '../components/ProgressBar';
 import ConfirmDialog from '../components/ConfirmDialog';
 import {
   DayKey,
-  countsByDay,
   dayBoundsMs,
   dayKeyLocal,
-  formatDayShort,
   monthOfDay,
   recentWindowMs,
 } from '../meeting-dates';
+import type { DetailTab, DateView, QAEntry } from './meetings/types';
+import ErrorCard from './meetings/ErrorCard';
+import MeetingList from './meetings/MeetingList';
+import ProjectSummaryHeader from './meetings/ProjectSummaryHeader';
+import MeetingDetailHeader from './meetings/MeetingDetailHeader';
+import DetailTabBar from './meetings/DetailTabBar';
+import NotesTab from './meetings/NotesTab';
+import TranscriptTab from './meetings/TranscriptTab';
+import AskTab from './meetings/AskTab';
 
 interface MeetingsPageProps {
   initialMeetingId?: string | null;
@@ -26,21 +28,6 @@ interface MeetingsPageProps {
   notebooks?: string[];
   activeProjectFilter?: string | null;
   projects?: Project[];
-}
-
-type DetailTab = 'notes' | 'transcript' | 'speakers' | 'ask';
-
-/**
- * Which slice of the archive the list is showing. 'recent' is the default
- * two-week window; 'day' is a single day picked from the calendar.
- */
-type DateView = { mode: 'recent' } | { mode: 'day'; day: DayKey };
-
-interface QAEntry {
-  id: string;
-  question: string;
-  answer: string;
-  timestamp: string;
 }
 
 export default function MeetingsPage({ initialMeetingId, activeNotebook, notebooks, activeProjectFilter, projects = [] }: MeetingsPageProps) {
@@ -601,28 +588,6 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     toastTimerRef.current = setTimeout(() => setToastMessage(''), 3000);
   }
 
-  function formatDuration(seconds: number): string {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  }
-
-  function formatFileSize(bytes: number): string {
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  function getStatusLabel(status: string): string {
-    switch (status) {
-      case 'recorded': return 'Recorded';
-      case 'transcribing': return 'Transcribing...';
-      case 'transcribed': return 'Transcribed';
-      case 'generating': return 'Generating...';
-      case 'complete': return 'Notes Ready';
-      default: return status;
-    }
-  }
-
   // Filter meetings by notebook, then by project, then by tag
   // Recordings without a notebook field belong to the first (default) notebook
   const defaultNotebook = notebooks?.[0] || 'Personal';
@@ -637,268 +602,42 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     : projectMeetings;
   const activeProject = activeProjectFilter ? projects.find(p => p.id === activeProjectFilter) : null;
 
-  // Run the index through the same notebook -> project -> tag chain as the list,
-  // so a calendar dot never promises a day that would render empty.
-  const indexEntries = recIndex.filter(e => {
-    if (activeNotebook && (e.notebook || defaultNotebook) !== activeNotebook) return false;
-    if (activeProjectFilter && e.project !== activeProjectFilter) return false;
-    if (filterTag && !e.tags?.includes(filterTag)) return false;
-    return true;
-  });
-  const dayCounts = countsByDay(indexEntries);
-  const todayKey = dayKeyLocal(Date.now());
-  const minDay = indexEntries.length
-    ? dayKeyLocal(indexEntries.reduce((min, e) => Math.min(min, e.ms), Infinity))
-    : null;
-  const selectedDay = dateView.mode === 'day' ? dateView.day : null;
-
-  // Group meetings by day
-  function getDayLabel(dateStr: string): string {
-    const d = new Date(dateStr);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (d.toDateString() === today.toDateString()) return 'Today';
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
-  }
-
-  const dayGroups: { label: string; meetings: typeof filteredMeetings }[] = [];
-  for (const rec of filteredMeetings) {
-    const label = getDayLabel(rec.date);
-    const last = dayGroups[dayGroups.length - 1];
-    if (last && last.label === label) {
-      last.meetings.push(rec);
-    } else {
-      dayGroups.push({ label, meetings: [rec] });
-    }
-  }
-
   return (
     <>
-      <div className="page-header">
-        <h1>{activeProject ? activeProject.name : 'Meetings'}</h1>
-        {activeProject && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <button
-              className="btn btn-secondary"
-              style={{ fontSize: 12, padding: '4px 10px' }}
-              onClick={() => setShowProjectSummary(!showProjectSummary)}
-            >
-              {showProjectSummary ? 'Hide Summary' : 'Summary'}
-            </button>
-            <button
-              className="btn btn-secondary"
-              style={{ fontSize: 12, padding: '4px 10px' }}
-              disabled={isGeneratingProjectSummary}
-              onClick={async () => {
-                setIsGeneratingProjectSummary(true);
-                setShowProjectSummary(true);
-                setProjectSummaryStreaming('');
-                const unsub = window.meetingMind.on('project-summary:stream', (chunk: unknown) => {
-                  setProjectSummaryStreaming(prev => prev + (chunk as string));
-                });
-                const result = await (window.meetingMind as any).generateProjectSummary(activeProject.id);
-                unsub();
-                setIsGeneratingProjectSummary(false);
-                if (result.success) {
-                  setProjectSummary(result.summary);
-                  setProjectSummaryStreaming('');
-                } else {
-                  showToast(`Summary failed: ${result.error}`);
-                }
-              }}
-            >
-              {isGeneratingProjectSummary ? 'Generating...' : (projectSummary ? 'Update Summary' : 'Generate Summary')}
-            </button>
-          </div>
-        )}
-      </div>
-      {/* Project Summary Panel */}
-      {activeProject && showProjectSummary && (
-        <div style={{ padding: '0 20px 12px', maxHeight: 300, overflowY: 'auto' }}>
-          <div className="card" style={{ padding: 16 }}>
-            {isGeneratingProjectSummary && projectSummaryStreaming ? (
-              <MarkdownRenderer content={projectSummaryStreaming} />
-            ) : isGeneratingProjectSummary ? (
-              <div style={{ textAlign: 'center', padding: 20 }}>
-                <div className="pipeline-spinner" style={{ margin: '0 auto 8px' }} />
-                <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Generating project summary...</div>
-              </div>
-            ) : projectSummary ? (
-              <MarkdownRenderer content={projectSummary} />
-            ) : (
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: 12 }}>
-                No summary yet. Click "Generate Summary" to create one.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <ProjectSummaryHeader
+        activeProject={activeProject}
+        showProjectSummary={showProjectSummary}
+        setShowProjectSummary={setShowProjectSummary}
+        isGeneratingProjectSummary={isGeneratingProjectSummary}
+        setIsGeneratingProjectSummary={setIsGeneratingProjectSummary}
+        projectSummary={projectSummary}
+        setProjectSummary={setProjectSummary}
+        projectSummaryStreaming={projectSummaryStreaming}
+        setProjectSummaryStreaming={setProjectSummaryStreaming}
+        showToast={showToast}
+      />
       <div className="page-content" style={{ display: 'flex', gap: 20, height: activeProject && showProjectSummary ? 'calc(100vh - 412px)' : 'calc(100vh - 112px)' }}>
         {/* List */}
-        <div style={{ flex: '0 0 340px', width: 340, maxWidth: 340, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          {/* Fixed toolbar */}
-          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 8px 8px' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <SearchBar onSelectResult={(id) => { selectMeetingById(id); }} />
-            </div>
-            <button
-              className="btn btn-secondary"
-              onClick={toggleCalendar}
-              title="Browse meetings by date"
-              aria-pressed={calendarOpen}
-              style={{ fontSize: 11, padding: '6px 8px', flexShrink: 0 }}
-            >
-              &#128197;
-            </button>
-            {allTags.length > 0 && (
-              <select
-                value={filterTag || ''}
-                onChange={e => setFilterTag(e.target.value || null)}
-                style={{
-                  background: 'var(--bg-input)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius)',
-                  color: 'var(--text-secondary)',
-                  fontSize: 11,
-                  padding: '6px 8px',
-                  flexShrink: 0,
-                }}
-              >
-                <option value="">All tags</option>
-                {allTags.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            )}
-          </div>
-
-          {calendarOpen && (
-            <MonthCalendar
-              year={calMonth.year}
-              month={calMonth.month}
-              countsByDay={dayCounts}
-              selectedDay={selectedDay}
-              todayKey={todayKey}
-              minDay={minDay}
-              onMonthChange={(year, month) => setCalMonth({ year, month })}
-              onSelectDay={showDay}
-            />
-          )}
-
-          {dateView.mode === 'day' && (
-            <div className="mm-date-chip">
-              <span className="mm-date-chip-label">Showing {formatDayShort(dateView.day)}</span>
-              <button className="mm-date-chip-clear" onClick={backToRecent}>Back to recent</button>
-            </div>
-          )}
-
-          {/* Scrollable meetings list */}
-          <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8 }}>
-          {filteredMeetings.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              {dateView.mode === 'day'
-                ? (filterTag
-                    ? `No meetings on ${formatDayShort(dateView.day)} matching your filters.`
-                    : `No meetings on ${formatDayShort(dateView.day)}.`)
-                : (filterTag
-                    ? 'No meetings with this tag.'
-                    : 'No meetings in the last two weeks. Use the calendar to browse further back.')}
-            </div>
-          )}
-
-          {dayGroups.map(group => (
-            <div key={group.label}>
-              <div style={{
-                padding: '12px 4px 6px',
-                fontSize: 11,
-                fontWeight: 600,
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px',
-              }}>
-                {group.label}
-              </div>
-              <div className="meeting-list">
-                {group.meetings.map(rec => (
-                  <div
-                    key={rec.id}
-                    className="meeting-item"
-                    draggable
-                    onDragStart={(e) => {
-                      e.dataTransfer.setData('text/recording-id', rec.id);
-                      e.dataTransfer.effectAllowed = 'move';
-                    }}
-                    onClick={() => selectMeeting(rec)}
-                    style={{
-                      borderColor: selectedMeeting?.id === rec.id ? 'var(--accent-blue)' : undefined,
-                      position: 'relative',
-                    }}
-                  >
-                    <div className="meeting-item-info">
-                      <div className="meeting-item-title">{rec.title || 'Untitled Meeting'}</div>
-                      <div className="meeting-item-meta">
-                        {new Date(rec.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} &middot; {formatDuration(rec.duration)} &middot; {formatFileSize(rec.fileSize)}
-                        {rec.source === 'import' && <ImportedBadge />}
-                      </div>
-                      {rec.tags && rec.tags.length > 0 && (
-                        <div style={{ display: 'flex', gap: 3, marginTop: 4, flexWrap: 'wrap' }}>
-                          {rec.tags.map(t => (
-                            <span key={t} style={{
-                              padding: '1px 6px',
-                              background: 'var(--accent-blue-tint)',
-                              color: 'var(--accent-blue)',
-                              borderRadius: 8,
-                              fontSize: 10,
-                            }}>{t}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ position: 'absolute', top: 8, right: 10, display: 'flex', gap: 5, alignItems: 'center' }}>
-                      {/* Transcript icon */}
-                      <StatusIcon
-                        ready={['transcribed', 'generating', 'complete'].includes(rec.status)}
-                        activeColor="var(--accent-blue)"
-                        tooltip={
-                          rec.status === 'transcribing' ? 'Transcribing...'
-                          : ['transcribed', 'generating', 'complete'].includes(rec.status) ? 'Transcript ready'
-                          : 'Not yet transcribed'
-                        }
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <line x1="16" y1="13" x2="8" y2="13" />
-                          <line x1="16" y1="17" x2="8" y2="17" />
-                        </svg>
-                      </StatusIcon>
-                      {/* Notes icon */}
-                      <StatusIcon
-                        ready={rec.status === 'complete'}
-                        activeColor="var(--accent-green)"
-                        tooltip={
-                          rec.status === 'generating' ? 'Generating notes...'
-                          : rec.status === 'complete' ? 'Notes ready'
-                          : 'Notes not generated'
-                        }
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 20h9" />
-                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                        </svg>
-                      </StatusIcon>
-                      {(rec.status === 'transcribing' || rec.status === 'generating') && (
-                        <div className="pipeline-spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          </div>
-        </div>
+        <MeetingList
+          filteredMeetings={filteredMeetings}
+          selectedMeeting={selectedMeeting}
+          selectMeeting={selectMeeting}
+          selectMeetingById={selectMeetingById}
+          allTags={allTags}
+          filterTag={filterTag}
+          setFilterTag={setFilterTag}
+          recIndex={recIndex}
+          activeNotebook={activeNotebook}
+          activeProjectFilter={activeProjectFilter}
+          defaultNotebook={defaultNotebook}
+          dateView={dateView}
+          calendarOpen={calendarOpen}
+          toggleCalendar={toggleCalendar}
+          calMonth={calMonth}
+          setCalMonth={setCalMonth}
+          showDay={showDay}
+          backToRecent={backToRecent}
+        />
 
         {/* Detail Panel */}
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -908,324 +647,41 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-              {/* Header bar — compact */}
-              <div className="card" style={{ flexShrink: 0, marginBottom: 12, padding: '10px 16px' }}>
-                {/* Row 1: title + meta + actions */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {isEditingTitle ? (
-                      <input
-                        ref={titleInputRef}
-                        value={editTitle}
-                        onChange={e => setEditTitle(e.target.value)}
-                        onBlur={saveTitle}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') saveTitle();
-                          if (e.key === 'Escape') setIsEditingTitle(false);
-                        }}
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 600,
-                          background: 'var(--bg-input)',
-                          border: '1px solid var(--accent-blue)',
-                          borderRadius: 'var(--radius)',
-                          color: 'var(--text-primary)',
-                          padding: '2px 8px',
-                          width: '100%',
-                          outline: 'none',
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{ fontSize: 15, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-                        onClick={startEditingTitle}
-                        title="Click to edit title"
-                      >
-                        {selectedMeeting.title || 'Untitled Meeting'}
-                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 6 }}>&#9998;</span>
-                      </div>
-                    )}
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, whiteSpace: 'nowrap' }}>
-                      {new Date(selectedMeeting.date).toLocaleString()} &middot;{' '}
-                      {formatDuration(selectedMeeting.duration)} &middot;{' '}
-                      {formatFileSize(selectedMeeting.fileSize)}
-                      {showCostData && selectedMeeting.transcriptionCost && (
-                        <> &middot; <span style={{ color: 'var(--accent-yellow)' }}>${selectedMeeting.transcriptionCost.estimatedCost.toFixed(4)}</span></>
-                      )}
-                      <span className={`status-badge ${selectedMeeting.status}`} style={{ marginLeft: 8 }}>
-                        {getStatusLabel(selectedMeeting.status)}
-                      </span>
-                      {selectedMeeting.source === 'import' && <ImportedBadge />}
-                      {selectedMeeting.audioNormalization && (
-                        <span
-                          title={`Audio normalized (${selectedMeeting.audioNormalization.method})${
-                            selectedMeeting.audioNormalization.appliedGainDb != null
-                              ? ` — +${selectedMeeting.audioNormalization.appliedGainDb.toFixed(1)} dB`
-                              : ''
-                          }. Before: mean ${selectedMeeting.audioNormalization.beforeLevel?.meanVolume?.toFixed(1)} dB, max ${selectedMeeting.audioNormalization.beforeLevel?.maxVolume?.toFixed(1)} dB.`}
-                          style={{
-                            marginLeft: 6,
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            fontSize: 10,
-                            fontWeight: 500,
-                            background: 'var(--accent-blue-tint, rgba(59,130,246,0.15))',
-                            color: 'var(--accent-blue)',
-                            border: '1px solid var(--accent-blue)',
-                            cursor: 'help',
-                          }}
-                        >
-                          Normalized
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Primary action (pipeline step) */}
-                  {selectedMeeting.status === 'recorded' && (
-                    <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={() => handleTranscribe()} disabled={isTranscribing}>
-                      {isTranscribing ? 'Transcribing...' : 'Transcribe'}
-                    </button>
-                  )}
-                  {selectedMeeting.status === 'transcribed' && (
-                    <button className="btn btn-primary" style={{ flexShrink: 0 }} onClick={handleGenerateNotes} disabled={isStreaming}>
-                      {isStreaming ? 'Generating...' : 'Generate Notes'}
-                    </button>
-                  )}
-
-                  {/* Gear menu */}
-                  <div ref={actionsMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => setShowActionsMenu(prev => !prev)}
-                      style={{ padding: '4px 6px', lineHeight: 1 }}
-                      title="Actions"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                      </svg>
-                    </button>
-                    {showActionsMenu && (
-                      <div className="actions-dropdown">
-                        {(selectedMeeting.status === 'transcribed' || selectedMeeting.status === 'complete') && !selectedMeeting.audioRemovedAt && (
-                          <>
-                            <button
-                              className="actions-dropdown-item"
-                              onClick={() => { setShowActionsMenu(false); setPendingConfirm('retranscribe'); }}
-                              disabled={isTranscribing}
-                            >
-                              Re-transcribe
-                            </button>
-                            <div className="actions-dropdown-sep" />
-                          </>
-                        )}
-                        {selectedMeeting.status === 'complete' && (
-                          <>
-                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSaveNotes(); }}>
-                              Save Notes
-                            </button>
-                            <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSaveToObsidian(); }}>
-                              Save to Obsidian
-                            </button>
-                            {meetinghubVisible && (
-                              <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSendToMeetingHub(); }}>
-                                {(selectedMeeting as any).meetinghub?.status === 'sent' ? 'Re-send to MeetingHub' : 'Send to MeetingHub'}
-                              </button>
-                            )}
-                            <button className="actions-dropdown-item" onClick={() => {
-                              setShowActionsMenu(false);
-                              // Only ask when there are notes to lose.
-                              if (notesContent.trim()) setPendingConfirm('regenerate');
-                              else handleGenerateNotes();
-                            }} disabled={isStreaming}>
-                              Regenerate Notes
-                            </button>
-                            <button className="actions-dropdown-item" onClick={async () => {
-                              setShowActionsMenu(false);
-                              showToast('Analyzing sentiment...');
-                              const r = await (window.meetingMind as any).analyzeSentiment(selectedMeeting.id);
-                              if (r.success) {
-                                showToast(`Sentiment: ${r.sentiment.label}`);
-                                refreshSelectedMeeting();
-                              } else {
-                                showToast(`Sentiment analysis failed: ${r.error}`);
-                              }
-                            }}>
-                              {(selectedMeeting as any).sentiment ? 'Regenerate Sentiment' : 'Analyze Sentiment'}
-                            </button>
-                            <div className="actions-dropdown-sep" />
-                          </>
-                        )}
-                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).copyNotesToClipboard(selectedMeeting.id); showToast(r.success ? 'Notes copied to clipboard' : `Copy failed: ${r.error}`); }}>
-                          Copy to Clipboard
-                        </button>
-                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); showToast('Generating PDF...'); const r = await (window.meetingMind as any).exportAsPDF(selectedMeeting.id); showToast(r.success ? `PDF saved: ${r.path}` : `PDF export failed: ${r.error}`); }}>
-                          Export as PDF
-                        </button>
-                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).emailNotes(selectedMeeting.id); if (!r.success) showToast(`Email failed: ${r.error}`); }}>
-                          Email to Attendees
-                        </button>
-                        <div className="actions-dropdown-sep" />
-                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).copyTranscriptToClipboard(selectedMeeting.id); showToast(r.success ? 'Transcript copied to clipboard' : `Copy failed: ${r.error}`); }}>
-                          Copy Transcript (with names)
-                        </button>
-                        <button className="actions-dropdown-item" onClick={async () => { setShowActionsMenu(false); const r = await (window.meetingMind as any).exportTranscript(selectedMeeting.id); if (r.success) showToast(`Transcript saved: ${r.path}`); else if (!r.canceled) showToast(`Export failed: ${r.error}`); }}>
-                          Export Transcript&hellip;
-                        </button>
-                        <div className="actions-dropdown-sep" />
-                        <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); window.meetingMind.openInFinder(selectedMeeting.audioPath); }}>
-                          Open in Finder
-                        </button>
-                        {notebooks && notebooks.length > 1 && (
-                          <>
-                            <div className="actions-dropdown-sep" />
-                            <div style={{ padding: '4px 12px 2px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                              Move to Notebook
-                            </div>
-                            {notebooks.filter(nb => nb !== (selectedMeeting.notebook || defaultNotebook)).map(nb => (
-                              <button
-                                key={nb}
-                                className="actions-dropdown-item"
-                                onClick={async () => {
-                                  setShowActionsMenu(false);
-                                  await (window.meetingMind as any).moveToNotebook(selectedMeeting.id, nb);
-                                  setSelectedMeeting({ ...selectedMeeting, notebook: nb });
-                                  loadMeetings();
-                                  showToast(`Moved to ${nb}`);
-                                }}
-                              >
-                                {nb}
-                              </button>
-                            ))}
-                          </>
-                        )}
-                        {projects.length > 0 && (
-                          <>
-                            <div className="actions-dropdown-sep" />
-                            <div style={{ padding: '4px 12px 2px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                              Move to Project
-                            </div>
-                            {(selectedMeeting as any).project && (
-                              <button
-                                className="actions-dropdown-item"
-                                onClick={async () => {
-                                  setShowActionsMenu(false);
-                                  await (window.meetingMind as any).moveToProject(selectedMeeting.id, null);
-                                  loadMeetings();
-                                  showToast('Removed from project');
-                                }}
-                              >
-                                Remove from Project
-                              </button>
-                            )}
-                            {projects
-                              .filter(p => p.notebook === activeNotebook && p.id !== (selectedMeeting as any).project)
-                              .map(p => (
-                                <button
-                                  key={p.id}
-                                  className="actions-dropdown-item"
-                                  onClick={async () => {
-                                    setShowActionsMenu(false);
-                                    await (window.meetingMind as any).moveToProject(selectedMeeting.id, p.id);
-                                    loadMeetings();
-                                    showToast(`Moved to ${p.name}`);
-                                  }}
-                                >
-                                  {p.name}
-                                </button>
-                              ))}
-                          </>
-                        )}
-                        <div className="actions-dropdown-sep" />
-                        <button className="actions-dropdown-item actions-dropdown-danger" onClick={() => { setShowActionsMenu(false); setShowDeleteConfirm(true); }}>
-                          Delete Meeting
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {/* Row 2: tags + sentiment */}
-                <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <TagEditor
-                    tags={selectedMeeting.tags || []}
-                    allTags={allTags}
-                    onChange={handleTagsChange}
-                  />
-                  {(selectedMeeting as any).sentiment?.label && (() => {
-                    const sentimentColors: Record<string, string> = {
-                      'Collaborative': 'var(--accent-blue)',
-                      'Productive': 'var(--accent-green)',
-                      'Tense': '#e67e22',
-                      'Contentious': '#e74c3c',
-                      'Casual': '#1abc9c',
-                      'Informational': 'var(--text-muted)',
-                      'Brainstorming': '#9b59b6',
-                      'Decision-focused': '#5b6abf',
-                      'Celebratory': '#f1c40f',
-                      'Neutral': 'var(--text-muted)',
-                    };
-                    const label = (selectedMeeting as any).sentiment.label;
-                    const color = sentimentColors[label] || 'var(--text-muted)';
-                    return (
-                      <span
-                        title={(selectedMeeting as any).sentiment.explanation}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '2px 10px',
-                          borderRadius: 10,
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color,
-                          background: `color-mix(in srgb, ${color} 12%, transparent)`,
-                          border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
-                          cursor: 'default',
-                        }}
-                      >
-                        {label}
-                      </span>
-                    );
-                  })()}
-                  {meetinghubVisible && (selectedMeeting as any).meetinghub?.status && (() => {
-                    const mh = (selectedMeeting as any).meetinghub;
-                    const colors: Record<string, string> = {
-                      sent: 'var(--accent-green)',
-                      pending: '#e67e22',
-                      skipped: 'var(--text-muted)',
-                      error: '#e74c3c',
-                    };
-                    const labels: Record<string, string> = {
-                      sent: 'MeetingHub ✓',
-                      pending: 'MeetingHub: review',
-                      skipped: 'MeetingHub: skipped',
-                      error: 'MeetingHub: failed',
-                    };
-                    const color = colors[mh.status] || 'var(--text-muted)';
-                    return (
-                      <span
-                        title={mh.detail || ''}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '2px 10px',
-                          borderRadius: 10,
-                          fontSize: 11,
-                          fontWeight: 500,
-                          color,
-                          background: `color-mix(in srgb, ${color} 12%, transparent)`,
-                          border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
-                          cursor: 'default',
-                        }}
-                      >
-                        {labels[mh.status] || mh.status}
-                      </span>
-                    );
-                  })()}
-                </div>
-              </div>
+              <MeetingDetailHeader
+                selectedMeeting={selectedMeeting}
+                setSelectedMeeting={setSelectedMeeting}
+                isEditingTitle={isEditingTitle}
+                setIsEditingTitle={setIsEditingTitle}
+                editTitle={editTitle}
+                setEditTitle={setEditTitle}
+                titleInputRef={titleInputRef}
+                startEditingTitle={startEditingTitle}
+                saveTitle={saveTitle}
+                showCostData={showCostData}
+                isTranscribing={isTranscribing}
+                isStreaming={isStreaming}
+                notesContent={notesContent}
+                handleTranscribe={handleTranscribe}
+                handleGenerateNotes={handleGenerateNotes}
+                actionsMenuRef={actionsMenuRef}
+                showActionsMenu={showActionsMenu}
+                setShowActionsMenu={setShowActionsMenu}
+                setPendingConfirm={setPendingConfirm}
+                setShowDeleteConfirm={setShowDeleteConfirm}
+                handleSaveNotes={handleSaveNotes}
+                handleSaveToObsidian={handleSaveToObsidian}
+                handleSendToMeetingHub={handleSendToMeetingHub}
+                meetinghubVisible={meetinghubVisible}
+                showToast={showToast}
+                refreshSelectedMeeting={refreshSelectedMeeting}
+                loadMeetings={loadMeetings}
+                notebooks={notebooks}
+                defaultNotebook={defaultNotebook}
+                activeNotebook={activeNotebook}
+                projects={projects}
+                allTags={allTags}
+                handleTagsChange={handleTagsChange}
+              />
 
               {/* Audio Player — pinned */}
               {selectedMeeting.audioRemovedAt && (
@@ -1281,147 +737,32 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
 
               {/* Tab bar for Notes / Transcript — pinned */}
               {(selectedMeeting.status === 'transcribed' || selectedMeeting.status === 'complete' || selectedMeeting.status === 'generating') && (
-                <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-color)', flexShrink: 0, paddingLeft: 12 }}>
-                  <button
-                    onClick={() => setDetailTab('notes')}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: detailTab === 'notes' ? '2px solid var(--accent-blue)' : '2px solid transparent',
-                      color: detailTab === 'notes' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Notes
-                  </button>
-                  <button
-                    onClick={() => setDetailTab('transcript')}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: detailTab === 'transcript' ? '2px solid var(--accent-blue)' : '2px solid transparent',
-                      color: detailTab === 'transcript' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Transcript
-                  </button>
-                  <button
-                    onClick={() => setDetailTab('speakers')}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: detailTab === 'speakers' ? '2px solid var(--accent-blue)' : '2px solid transparent',
-                      color: detailTab === 'speakers' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Speakers
-                  </button>
-                  <button
-                    onClick={() => setDetailTab('ask')}
-                    style={{
-                      padding: '8px 16px',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      background: 'none',
-                      border: 'none',
-                      borderBottom: detailTab === 'ask' ? '2px solid var(--accent-blue)' : '2px solid transparent',
-                      color: detailTab === 'ask' ? 'var(--text-primary)' : 'var(--text-muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Ask
-                  </button>
-                </div>
+                <DetailTabBar detailTab={detailTab} setDetailTab={setDetailTab} />
               )}
 
-              {/* Notes error */}
-              {detailTab === 'notes' && notesError && (
-                <ErrorCard
-                  title="Notes Generation Failed"
-                  error={notesError}
-                  onRetry={handleGenerateNotes}
-                  onDismiss={() => setNotesError(null)}
+              {detailTab === 'notes' && (
+                <NotesTab
+                  selectedMeeting={selectedMeeting}
+                  notesContent={notesContent}
+                  notesError={notesError}
+                  setNotesError={setNotesError}
+                  isStreaming={isStreaming}
+                  isLoadingNotes={isLoadingNotes}
+                  handleGenerateNotes={handleGenerateNotes}
+                  handleNotesCorrection={handleNotesCorrection}
+                  setDetailTab={setDetailTab}
                 />
-              )}
-
-              {/* Parked behind the speaker gate */}
-              {detailTab === 'notes' && !notesError && !isStreaming && !isLoadingNotes && !notesContent
-                && selectedMeeting.status === 'transcribed' && selectedMeeting.awaitingSpeakerReview && (
-                <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                  <div style={{ flex: 1, fontSize: 13 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 2 }}>Notes are waiting on speaker names</div>
-                    <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                      Name the speakers so action items land on the right people, then generate.
-                    </div>
-                  </div>
-                  <button className="btn btn-ghost" onClick={() => setDetailTab('speakers')}>Name speakers</button>
-                  <button className="btn btn-primary" onClick={handleGenerateNotes} disabled={isStreaming}>Generate anyway</button>
-                </div>
-              )}
-
-              {/* Notes tab */}
-              {detailTab === 'notes' && !notesError && (isStreaming || isLoadingNotes || notesContent || selectedMeeting.status === 'complete') && (
-                <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-                  <h3 style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                    Meeting Notes
-                    {isStreaming && <span style={{ color: 'var(--accent-yellow)', marginLeft: 8 }}>(generating...)</span>}
-                  </h3>
-                  {isLoadingNotes && !notesContent ? (
-                    <div style={{ textAlign: 'center', padding: 20 }}>
-                      <div className="pipeline-spinner" style={{ margin: '0 auto 8px' }} />
-                      <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Sending transcript to Claude...</div>
-                    </div>
-                  ) : (
-                    <div style={{
-                      background: 'var(--bg-input)',
-                      padding: 16,
-                      borderRadius: 'var(--radius)',
-                      flex: 1,
-                      overflowY: 'auto',
-                    }}>
-                      {notesContent ? (
-                        <MarkdownRenderer content={notesContent} onCorrection={handleNotesCorrection} />
-                      ) : (
-                        <div style={{ color: 'var(--text-muted)' }}>Notes will appear here after generation.</div>
-                      )}
-                    </div>
-                  )}
-                </div>
               )}
 
               {/* Transcript tab */}
               {detailTab === 'transcript' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                  {utterances.length > 0 ? (
-                    <TranscriptViewer
-                      utterances={utterances}
-                      currentTime={audioState.currentTime}
-                      speakerNames={selectedMeeting.speakerNames || {}}
-                      onSeek={audioControls.seek}
-                      onRenameSpeaker={handleRenameSpeaker}
-                    />
-                  ) : (
-                    <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                      <div style={{ fontSize: 13 }}>
-                        Transcript viewer requires utterance-level data from AssemblyAI.
-                      </div>
-                      <div style={{ fontSize: 12, marginTop: 4 }}>
-                        The raw transcript text is available in the Notes tab after generation.
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <TranscriptTab
+                  selectedMeeting={selectedMeeting}
+                  utterances={utterances}
+                  currentTime={audioState.currentTime}
+                  onSeek={audioControls.seek}
+                  handleRenameSpeaker={handleRenameSpeaker}
+                />
               )}
 
               {/* Speakers tab */}
@@ -1446,226 +787,21 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
 
               {/* Ask tab */}
               {detailTab === 'ask' && (
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-                  {/* Q&A history */}
-                  <div
-                    ref={qaScrollRef}
-                    style={{ flex: 1, overflowY: 'auto', padding: '12px 0' }}
-                  >
-                    {qaEntries.length === 0 && !qaIsAsking && !qaError && (
-                      <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4, marginBottom: 8 }}>
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-                          <line x1="12" y1="17" x2="12.01" y2="17" />
-                        </svg>
-                        <div style={{ fontSize: 13 }}>Ask a question about this meeting</div>
-                        <div style={{ fontSize: 12, marginTop: 4 }}>
-                          The full transcript and notes will be provided as context.
-                        </div>
-                      </div>
-                    )}
-
-                    {qaError && (
-                      <div style={{ padding: '0 4px', marginBottom: 12 }}>
-                        <ErrorCard
-                          title="Question Failed"
-                          error={qaError}
-                          onDismiss={() => setQaError(null)}
-                        />
-                      </div>
-                    )}
-
-                    {qaEntries.map(entry => (
-                      <div key={entry.id} style={{ marginBottom: 16, padding: '0 4px' }}>
-                        {/* Question */}
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                          <div style={{
-                            flex: 1,
-                            background: 'var(--accent-blue-tint)',
-                            borderRadius: '12px 12px 4px 12px',
-                            padding: '10px 14px',
-                            fontSize: 13,
-                            color: 'var(--text-primary)',
-                            marginLeft: 40,
-                          }}>
-                            {entry.question}
-                          </div>
-                        </div>
-                        {/* Answer */}
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                          <div style={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: '50%',
-                            background: 'var(--accent-blue-subtle)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                            marginTop: 2,
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                            </svg>
-                          </div>
-                          <div style={{
-                            flex: 1,
-                            background: 'var(--bg-input)',
-                            borderRadius: '4px 12px 12px 12px',
-                            padding: '10px 14px',
-                            fontSize: 13,
-                            color: 'var(--text-primary)',
-                            lineHeight: 1.6,
-                            position: 'relative',
-                          }}>
-                            <MarkdownRenderer content={entry.answer} />
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--border-color)' }}>
-                              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                                {new Date(entry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                                <button
-                                  onClick={async () => {
-                                    const r = await (window.meetingMind as any).saveQAToObsidian(selectedMeeting!.id, entry.id);
-                                    showToast(r.success ? 'Added to Obsidian note' : r.error);
-                                  }}
-                                  style={{
-                                    background: 'none',
-                                    border: 'none',
-                                    color: 'var(--text-muted)',
-                                    cursor: 'pointer',
-                                    padding: '2px 6px',
-                                    borderRadius: 4,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                  }}
-                                  title="Add to Obsidian note"
-                                >
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                                    <polyline points="14 2 14 8 20 8" />
-                                    <line x1="12" y1="18" x2="12" y2="12" />
-                                    <line x1="9" y1="15" x2="15" y2="15" />
-                                  </svg>
-                                </button>
-                              <button
-                                onClick={() => handleDeleteQuestion(entry.id)}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  color: 'var(--text-muted)',
-                                  cursor: 'pointer',
-                                  fontSize: 11,
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                }}
-                                title="Delete this Q&A"
-                              >
-                                &times;
-                              </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Streaming answer */}
-                    {qaIsAsking && (
-                      <div style={{ marginBottom: 16, padding: '0 4px' }}>
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                          <div style={{
-                            flex: 1,
-                            background: 'var(--accent-blue-tint)',
-                            borderRadius: '12px 12px 4px 12px',
-                            padding: '10px 14px',
-                            fontSize: 13,
-                            color: 'var(--text-primary)',
-                            marginLeft: 40,
-                          }}>
-                            {qaActiveQuestion}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                          <div style={{
-                            width: 24,
-                            height: 24,
-                            borderRadius: '50%',
-                            background: 'var(--accent-blue-subtle)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                            marginTop: 2,
-                          }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                            </svg>
-                          </div>
-                          <div style={{
-                            flex: 1,
-                            background: 'var(--bg-input)',
-                            borderRadius: '4px 12px 12px 12px',
-                            padding: '10px 14px',
-                            fontSize: 13,
-                            color: 'var(--text-primary)',
-                            lineHeight: 1.6,
-                          }}>
-                            {qaStreamingAnswer ? (
-                              <MarkdownRenderer content={qaStreamingAnswer} />
-                            ) : (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)' }}>
-                                <div className="pipeline-spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                                Thinking...
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Input area */}
-                  <div style={{
-                    flexShrink: 0,
-                    padding: '8px 0',
-                    borderTop: '1px solid var(--border-color)',
-                    display: 'flex',
-                    gap: 8,
-                  }}>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="Ask a question about this meeting..."
-                      value={qaQuestion}
-                      onChange={e => setQaQuestion(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleAskQuestion();
-                        }
-                      }}
-                      disabled={qaIsAsking}
-                      style={{ flex: 1 }}
-                    />
-                    <button
-                      className="btn btn-primary"
-                      onClick={handleAskQuestion}
-                      disabled={qaIsAsking || !qaQuestion.trim()}
-                      style={{ flexShrink: 0 }}
-                    >
-                      {qaIsAsking ? (
-                        <div className="pipeline-spinner" style={{ width: 14, height: 14, borderWidth: 2 }} />
-                      ) : (
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <line x1="22" y1="2" x2="11" y2="13" />
-                          <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
+                <AskTab
+                  selectedMeeting={selectedMeeting}
+                  qaScrollRef={qaScrollRef}
+                  qaEntries={qaEntries}
+                  qaIsAsking={qaIsAsking}
+                  qaError={qaError}
+                  setQaError={setQaError}
+                  qaActiveQuestion={qaActiveQuestion}
+                  qaStreamingAnswer={qaStreamingAnswer}
+                  qaQuestion={qaQuestion}
+                  setQaQuestion={setQaQuestion}
+                  handleAskQuestion={handleAskQuestion}
+                  handleDeleteQuestion={handleDeleteQuestion}
+                  showToast={showToast}
+                />
               )}
             </div>
           )}
@@ -1713,153 +849,5 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
       {/* Toast */}
       {toastMessage && <div className="toast">{toastMessage}</div>}
     </>
-  );
-}
-
-function ErrorCard({ title, error, onRetry, onDismiss, secondaryAction }: {
-  title: string;
-  error: string;
-  onRetry?: () => void;
-  onDismiss?: () => void;
-  secondaryAction?: { label: string; onClick: () => void };
-}) {
-  const [expanded, setExpanded] = React.useState(false);
-  const [copied, setCopied] = React.useState(false);
-
-  function handleCopy() {
-    navigator.clipboard.writeText(`${title}\n\n${error}`);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  return (
-    <div className="card" style={{
-      border: '1px solid var(--accent-primary)',
-      background: 'var(--accent-red-tint)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
-          <circle cx="12" cy="12" r="10" />
-          <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-primary)', marginBottom: 4 }}>{title}</div>
-          <div style={{
-            fontSize: 12,
-            color: 'var(--text-secondary)',
-            lineHeight: 1.5,
-            overflow: 'hidden',
-            maxHeight: expanded ? 'none' : '2.8em',
-          }}>
-            {error}
-          </div>
-          {error.length > 120 && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              style={{
-                background: 'none', border: 'none', color: 'var(--accent-blue)',
-                cursor: 'pointer', fontSize: 11, padding: '4px 0 0',
-              }}
-            >
-              {expanded ? 'Show less' : 'Show full error'}
-            </button>
-          )}
-        </div>
-        {onDismiss && (
-          <button
-            onClick={onDismiss}
-            style={{
-              background: 'none', border: 'none', color: 'var(--text-muted)',
-              cursor: 'pointer', padding: '0 2px', fontSize: 16, lineHeight: 1, flexShrink: 0,
-            }}
-          >&times;</button>
-        )}
-      </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-        {onRetry && (
-          <button className="btn btn-secondary" onClick={onRetry} style={{ fontSize: 12, padding: '4px 12px' }}>
-            Retry
-          </button>
-        )}
-        {secondaryAction && (
-          <button className="btn btn-secondary" onClick={secondaryAction.onClick} style={{ fontSize: 12, padding: '4px 12px' }}>
-            {secondaryAction.label}
-          </button>
-        )}
-        <button
-          className="btn btn-ghost"
-          onClick={handleCopy}
-          style={{ fontSize: 12, padding: '4px 12px' }}
-        >
-          {copied ? 'Copied!' : 'Copy Error'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function StatusIcon({ ready, activeColor, tooltip, children }: {
-  ready: boolean;
-  activeColor: string;
-  tooltip: string;
-  children: React.ReactNode;
-}) {
-  const [showTooltip, setShowTooltip] = React.useState(false);
-  return (
-    <span
-      onMouseEnter={() => setShowTooltip(true)}
-      onMouseLeave={() => setShowTooltip(false)}
-      style={{
-        position: 'relative',
-        display: 'inline-flex',
-        color: ready ? activeColor : 'var(--text-muted)',
-        opacity: ready ? 1 : 0.25,
-        cursor: 'default',
-      }}
-    >
-      {children}
-      {showTooltip && (
-        <span style={{
-          position: 'absolute',
-          bottom: '100%',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          marginBottom: 4,
-          padding: '3px 8px',
-          background: 'var(--bg-primary)',
-          border: '1px solid var(--border-color)',
-          borderRadius: 4,
-          fontSize: 10,
-          color: 'var(--text-secondary)',
-          whiteSpace: 'nowrap',
-          pointerEvents: 'none',
-          zIndex: 10,
-        }}>
-          {tooltip}
-        </span>
-      )}
-    </span>
-  );
-}
-
-// Marks a recording brought in from an audio file rather than recorded here.
-function ImportedBadge() {
-  return (
-    <span
-      title="Imported from an audio file"
-      style={{
-        marginLeft: 6,
-        padding: '1px 6px',
-        background: 'var(--bg-input)',
-        color: 'var(--text-secondary)',
-        border: '1px solid var(--border-primary)',
-        borderRadius: 8,
-        fontSize: 10,
-        verticalAlign: 'middle',
-      }}
-    >
-      Imported
-    </span>
   );
 }
