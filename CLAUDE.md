@@ -22,6 +22,31 @@ npm test             # jest
 
 API keys live in the macOS Keychain via keytar (service `MeetingMind`), not in electron-store.
 
+## Claude calls
+
+Every call to Claude goes through `runClaude()` in `src/main/claude-cli.ts` — don't spawn
+`claude` or construct an Anthropic client anywhere else. The CLI path runs with
+`--tools "" --strict-mcp-config --setting-sources ""` from an empty temp dir: transcripts and
+calendar invites are text other people control, so the model must only be able to write text back
+(tested in `claude-cli.test.ts`). Pass large meeting material as `context` (cached:
+`cache_control` on the API path, `--append-system-prompt-file` on the CLI path) and the
+instructions/question as `prompt`. Model IDs live only in `src/main/claude-models.ts` (shared with
+the Settings picker); `currentModelId()` migrates saved older IDs.
+
+## IPC rules
+
+`src/main/ipc.ts` registers handlers through `handle()`, which refuses callers other than our own
+page and requires recording/project IDs to be UUIDs (`src/main/ipc-guard.ts`). The window can't
+navigate away (`lockDownNavigation` in `main.ts`). Settings writes are checked against real setting
+names; the renderer can ask whether an API key exists (`hasApiKey`) but never read one.
+
+## Retention
+
+`src/main/retention.ts` deletes a meeting's audio (and the transcript's word-level timings) once it
+is older than `retentionDays` (default 60, 0 = never), 30s after launch and daily. Notes and
+transcript text are kept; the manifest gets `audioRemovedAt` and keeps `audioPath`, since other code
+finds the recording folder through `path.dirname(audioPath)`. Untranscribed meetings are never touched.
+
 ## Control channel (local companions)
 
 `src/main/control-server.ts` runs a small HTTP server on `127.0.0.1` so something else on this
