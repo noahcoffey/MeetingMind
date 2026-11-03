@@ -6,9 +6,10 @@ import { setupIpcHandlers } from './ipc';
 import { initializeStore, getSetting } from './store';
 import { initializeLogger, log } from './logger';
 import { createTray, destroyTray, updateTray } from './tray';
-import { getRecordingStatus, startRecording, stopRecordingExternally, pauseRecording, resumeRecording, recoverCrashedSessions, isPathInsideRecordingsDir } from './recording-manager';
+import { getRecordingStatus, stopRecordingExternally, pauseRecording, resumeRecording, recoverCrashedSessions, isPathInsideRecordingsDir, resetInterruptedJobs } from './recording-manager';
 import { startControlServer, stopControlServer } from './control-server';
 import { isSafeExternalUrl } from './ipc-guard';
+import { requestRecordingStart, setRecordStartDeps } from './record-start';
 
 // Set app name so dock/taskbar shows "MeetingMind" instead of "Electron" in dev
 app.name = 'MeetingMind';
@@ -105,12 +106,7 @@ function registerGlobalShortcuts(): void {
         showWindow();
       }
     } else {
-      log('info', 'Global hotkey: starting recording');
-      const deviceId = getSetting('defaultInputDevice') || 'default';
-      const result = startRecording(deviceId);
-      if (result.success) {
-        updateTray();
-      }
+      requestRecordingStart('hotkey');
     }
   });
 
@@ -258,6 +254,14 @@ app.whenReady().then(async () => {
   initializeStore();
   setupIpcHandlers();
 
+  // Nothing is transcribing or writing notes yet, so any recording that says
+  // it is was cut off by the last quit.
+  try {
+    resetInterruptedJobs();
+  } catch (err) {
+    log('error', 'Resetting interrupted jobs failed', err);
+  }
+
   createWindow();
 
   // Set up tray icon
@@ -267,6 +271,8 @@ app.whenReady().then(async () => {
 
   // Register global keyboard shortcuts
   registerGlobalShortcuts();
+
+  setRecordStartDeps({ showWindow, sendToRenderer });
 
   // Loopback control channel for local companions (Stream Deck key).
   startControlServer({ showWindow, sendToRenderer, updateTray });

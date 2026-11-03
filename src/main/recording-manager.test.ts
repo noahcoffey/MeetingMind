@@ -371,3 +371,23 @@ describe('recording-manager', () => {
     });
   });
 });
+
+describe('statusAfterInterruption', () => {
+  const { statusAfterInterruption } = require('./recording-manager');
+
+  test('a transcription cut off by a quit goes back to where it really got to', () => {
+    expect(statusAfterInterruption('transcribing', { transcript: false, notes: false })).toBe('recorded');
+    expect(statusAfterInterruption('transcribing', { transcript: true, notes: false })).toBe('transcribed');
+  });
+
+  test('a notes run cut off by a quit goes back to transcribed, or complete if older notes exist', () => {
+    expect(statusAfterInterruption('generating', { transcript: true, notes: false })).toBe('transcribed');
+    expect(statusAfterInterruption('generating', { transcript: true, notes: true })).toBe('complete');
+  });
+
+  test('finished states are left alone', () => {
+    for (const s of ['recorded', 'transcribed', 'complete', undefined]) {
+      expect(statusAfterInterruption(s, { transcript: true, notes: true })).toBeNull();
+    }
+  });
+});

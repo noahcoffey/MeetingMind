@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import { log } from './logger';
+import { requestRecordingStart } from './record-start';
 import {
   getRecordingStatus,
   pauseRecording,
@@ -145,13 +146,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, deps: ControlDe
     case '/start': {
       const status = getRecordingStatus();
       if (status.recording) return json(res, 409, { ...statusBody(), ok: false, error: 'already recording' });
-      deps.showWindow();
-      deps.sendToRenderer('control:navigate-record', { selectNext: true });
-      // Let the page mount and the staged meeting settle before pressing its
-      // own Record button -- a start that races the staging records an
-      // untitled meeting, which is worse than a start that takes half a second.
-      setTimeout(() => deps.sendToRenderer('control:start-recording'), 500);
-      log('info', 'Control: starting recording');
+      requestRecordingStart('control');
       return json(res, 200, { ok: true, starting: true });
     }
 

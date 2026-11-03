@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, nativeImage, Tray } from 'electron';
-import { getRecordingStatus, startRecording, stopRecordingExternally, pauseRecording, resumeRecording } from './recording-manager';
+import { getRecordingStatus, stopRecordingExternally, pauseRecording, resumeRecording } from './recording-manager';
 import { getSetting } from './store';
+import { requestRecordingStart } from './record-start';
 import { log } from './logger';
 
 let tray: Tray | null = null;
@@ -99,14 +100,7 @@ function buildContextMenu(): Menu {
     menuItems.push({
       label: 'Start Recording',
       accelerator: 'CmdOrCtrl+Shift+R',
-      click: () => {
-        const deviceId = getSetting('defaultInputDevice') || 'default';
-        const result = startRecording(deviceId, undefined);
-        if (result.success) {
-          log('info', 'Recording started via tray');
-          updateTray();
-        }
-      },
+      click: () => requestRecordingStart('tray'),
     });
   }
 
