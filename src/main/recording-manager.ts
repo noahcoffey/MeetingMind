@@ -9,6 +9,7 @@ import { writeJsonAtomic } from './fs-utils';
 import { checkCrashRecovery, RecoverableSession } from './recorder';
 import { spawn, ChildProcess } from 'child_process';
 import { isSafePathSegment } from './ipc-guard';
+import { cleanMarkName, marksToAudioTime, wavDurationMs, type SpeakerMark, type ChunkTiming } from './speaker-marks';
 
 const CHUNK_DURATION_SEC = 300; // 5 minutes
 const MANIFEST_INTERVAL_MS = 30000; // 30 seconds
@@ -36,6 +37,10 @@ interface ActiveRecording {
   userContext?: string;
   title?: string;
   notebook?: string;
+  /** Names tapped on the Record page while that person spoke (elapsed ms). */
+  speakerMarks: SpeakerMark[];
+  /** chunk file name → elapsed ms when its ffmpeg started, to map marks onto the audio. */
+  chunkStarts: Record<string, number>;
 }
 
 let activeRecording: ActiveRecording | null = null;
@@ -114,6 +119,8 @@ export function startRecording(deviceId: string, systemAudioDeviceId?: string, c
     userContext,
     title,
     notebook,
+    speakerMarks: [],
+    chunkStarts: {},
   };
 
   log('info', `Starting recording session ${sessionId}`, { deviceId });
@@ -148,6 +155,7 @@ function startChunk(): void {
   const chunkName = `chunk-${String(activeRecording.chunkIndex + 1).padStart(3, '0')}.wav`;
   const chunkPath = path.join(activeRecording.tempDir, chunkName);
   const ffmpegPath = getFFmpegPath();
+  activeRecording.chunkStarts[chunkName] = getElapsedMs();
 
   // Build ffmpeg command to record from input device.
   // On macOS, use avfoundation to capture audio — addressed by device *name*,
@@ -288,6 +296,8 @@ function writeManifest(): void {
     calendarEventProvider: activeRecording.calendarEventProvider,
     userContext: activeRecording.userContext,
     notebook: activeRecording.notebook,
+    speakerMarks: activeRecording.speakerMarks,
+    chunkStarts: activeRecording.chunkStarts,
   };
 
   const manifestPath = path.join(activeRecording.tempDir, 'recording-manifest.json');
@@ -448,6 +458,7 @@ export async function stopRecording(): Promise<{ success: boolean; recordingId?:
   fs.mkdirSync(outputDir, { recursive: true });
 
   const outputPath = path.join(outputDir, 'audio.m4a');
+  const speakerMarks = marksOnAudio(recording.speakerMarks, recording.tempDir, recording.chunks, recording.chunkStarts);
 
   try {
     await mergeChunks(recording.tempDir, recording.chunks, outputPath);
@@ -474,6 +485,7 @@ export async function stopRecording(): Promise<{ success: boolean; recordingId?:
       userContext: recording.userContext,
       notebook: recording.notebook || getSetting('activeNotebook') || 'Personal',
       speakerNames: {},
+      ...(speakerMarks.length ? { speakerMarks } : {}),
     };
 
     writeJsonAtomic(path.join(outputDir, 'manifest.json'), manifest);
@@ -737,6 +749,7 @@ async function recoverSession(session: RecoverableSession): Promise<string | nul
   const outputDir = path.join(getOutputDir(), recordingId);
   fs.mkdirSync(outputDir, { recursive: true });
   const outputPath = path.join(outputDir, 'audio.m4a');
+  const speakerMarks = marksOnAudio(manifest.speakerMarks || [], tempDir, validChunks, manifest.chunkStarts || {});
 
   try {
     await mergeChunks(tempDir, validChunks, outputPath);
@@ -756,6 +769,7 @@ async function recoverSession(session: RecoverableSession): Promise<string | nul
       userContext: manifest.userContext,
       notebook: manifest.notebook || getSetting('activeNotebook') || 'Personal',
       speakerNames: {},
+      ...(speakerMarks.length ? { speakerMarks } : {}),
       recovered: true,
     });
   } catch (err) {
@@ -770,6 +784,44 @@ async function recoverSession(session: RecoverableSession): Promise<string | nul
     skipped: manifest.chunks.length - validChunks.length,
   });
   return recordingId;
+}
+
+/**
+ * Move marks from recording time onto the merged audio's timeline. Without
+ * timings for every chunk (a session from before marks existed) the marks are
+ * kept as they are — close, if a little behind the audio late in a meeting.
+ */
+function marksOnAudio(marks: SpeakerMark[], tempDir: string, chunks: string[], chunkStarts: Record<string, number>): SpeakerMark[] {
+  if (!marks || marks.length === 0) return [];
+  const timings: ChunkTiming[] = [];
+  for (const chunk of chunks) {
+    const startedAtMs = chunkStarts[chunk];
+    const durationMs = wavDurationMs(path.join(tempDir, chunk));
+    if (typeof startedAtMs !== 'number' || durationMs === null) {
+      log('warn', 'Speaker marks: missing chunk timing, keeping recording-time marks', { chunk });
+      return marks.map(m => ({ ...m }));
+    }
+    timings.push({ startedAtMs, durationMs });
+  }
+  return marksToAudioTime(marks, timings);
+}
+
+/** Note that `name` is talking right now. Returns the stamped mark. */
+export function addSpeakerMark(rawName: unknown): { success: boolean; mark?: SpeakerMark; error?: string } {
+  if (!activeRecording) return { success: false, error: 'No recording in progress' };
+  const name = cleanMarkName(rawName);
+  if (!name) return { success: false, error: 'Name required' };
+  if (activeRecording.speakerMarks.length >= 5000) return { success: false, error: 'Too many marks' };
+  const mark = { name, atMs: Math.round(getElapsedMs()) };
+  activeRecording.speakerMarks.push(mark);
+  return { success: true, mark };
+}
+
+/** Take back the most recent mark (a mis-tap). */
+export function undoSpeakerMark(): { success: boolean; mark?: SpeakerMark; error?: string } {
+  if (!activeRecording) return { success: false, error: 'No recording in progress' };
+  const mark = activeRecording.speakerMarks.pop();
+  return mark ? { success: true, mark } : { success: false, error: 'Nothing to undo' };
 }
 
 function getElapsedMs(): number {
@@ -796,6 +848,7 @@ export interface RecordingStatus {
   userContext?: string;
   inputDevice?: string;
   systemAudioDevice?: string;
+  speakerMarks?: SpeakerMark[];
 }
 
 export function getRecordingStatus(): RecordingStatus {
@@ -815,6 +868,7 @@ export function getRecordingStatus(): RecordingStatus {
     userContext: activeRecording.userContext,
     inputDevice: activeRecording.inputDevice,
     systemAudioDevice: activeRecording.systemAudioDevice,
+    speakerMarks: activeRecording.speakerMarks.map(m => ({ ...m })),
   };
 }
 

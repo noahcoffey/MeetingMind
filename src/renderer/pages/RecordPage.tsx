@@ -12,6 +12,7 @@ import RecordingWarnings from './record/RecordingWarnings';
 import { ProcessingCard, CompleteCard } from './record/StatusCards';
 import CalendarSidebar from './record/CalendarSidebar';
 import DiscardModal from './record/DiscardModal';
+import SpeakerMarkPanel from './record/SpeakerMarkPanel';
 
 interface RecordPageProps {
   onRecordingComplete?: (recordingId: string) => void;
@@ -231,6 +232,11 @@ export default function RecordPage({ onRecordingComplete, onRecordingSaved, acti
                 onMeetingTitleChange={setMeetingTitle}
                 userContext={userContext}
                 onUserContextChange={setUserContext}
+              />
+
+              <SpeakerMarkPanel
+                attendees={selectedEvent?.attendees || []}
+                isPaused={isPaused}
               />
 
               <RecordingWarnings diskWarning={diskWarning} audioWarning={audioWarning} />

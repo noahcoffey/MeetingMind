@@ -1109,6 +1109,117 @@ body {
   grid-template-columns: 1fr;
 }
 
+/* "Who's talking?" — tap names during a recording */
+.rp-marks {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.rp-marks-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rp-marks-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rp-marks-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rp-marks-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rp-mark-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 150ms, border-color 150ms, transform 80ms;
+}
+
+.rp-mark-chip:hover:not(:disabled) {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue-subtle);
+}
+
+.rp-mark-chip:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.rp-mark-chip.flash {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue-tint);
+}
+
+.rp-mark-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rp-mark-chip.add {
+  color: var(--text-secondary);
+  background: transparent;
+  border-style: dashed;
+}
+
+.rp-mark-count {
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  color: var(--text-on-accent);
+  background: var(--accent-blue);
+  border-radius: 999px;
+}
+
+.rp-mark-input {
+  width: 160px;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.rp-marks-last {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rp-marks-undo {
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent-blue);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
 /* Device pickers — compact inline */
 .rp-devices {
   display: grid;

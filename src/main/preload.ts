@@ -25,6 +25,8 @@ const api = {
   pauseRecording: () => ipcRenderer.invoke('recording:pause'),
   resumeRecording: () => ipcRenderer.invoke('recording:resume'),
   getRecordingStatus: () => ipcRenderer.invoke('recording:status'),
+  markSpeaker: (name: string) => ipcRenderer.invoke('recording:markSpeaker', name),
+  undoSpeakerMark: () => ipcRenderer.invoke('recording:undoSpeakerMark'),
 
   // Recordings library
   getRecordings: (range?: { startMs: number; endMs: number }) => ipcRenderer.invoke('recordings:list', range),

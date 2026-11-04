@@ -15,6 +15,10 @@ export interface RecordingManifest {
   calendarEventProvider?: string;
   userContext?: string;
   notebook?: string;
+  /** Names tapped while recording, stamped with elapsed recording time. */
+  speakerMarks?: Array<{ name: string; atMs: number }>;
+  /** chunk file name → elapsed recording time (ms) when its capture started. */
+  chunkStarts?: Record<string, number>;
 }
 
 export interface RecoverableSession {

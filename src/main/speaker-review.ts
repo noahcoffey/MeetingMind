@@ -5,6 +5,7 @@ import { log } from './logger';
 import { getSetting, setSetting } from './store';
 import { getOutputDir, getRecording } from './recording-manager';
 import { runClaudePrompt } from './claude-cli';
+import { describeMarksForPrompt, type SpeakerMark } from './speaker-marks';
 
 // The gate between transcription and notes generation.
 //
@@ -168,13 +169,15 @@ const MAX_TRANSCRIPT_CHARS = 200_000;
 
 export function buildIdentifyPrompt(args: {
   speakers: string[];
-  utterances: Array<{ speaker: string; text: string; start: number }>;
+  utterances: Array<{ speaker: string; text: string; start: number; end?: number }>;
   candidates: string[];
   userName: string;
   title: string;
   alreadyNamed: Record<string, string>;
+  /** Names the recorder tapped during the meeting, on the audio's timeline. */
+  marks?: SpeakerMark[];
 }): string {
-  const { speakers, utterances, candidates, userName, title, alreadyNamed } = args;
+  const { speakers, utterances, candidates, userName, title, alreadyNamed, marks = [] } = args;
   let transcript = utterances.map(u => `[${fmtTime(u.start)}] ${u.speaker}: ${u.text}`).join('\n');
   if (transcript.length > MAX_TRANSCRIPT_CHARS) {
     transcript = transcript.slice(0, MAX_TRANSCRIPT_CHARS) + '\n[... transcript truncated ...]';
@@ -183,6 +186,10 @@ export function buildIdentifyPrompt(args: {
     .filter(([k, v]) => v && v !== k)
     .map(([k, v]) => `- ${k} is ${v}`)
     .join('\n');
+  const markSection = describeMarksForPrompt(
+    marks,
+    utterances.map(u => ({ speaker: u.speaker, start: u.start, end: u.end ?? u.start })),
+  );
 
   return `You are matching anonymous diarized speaker labels to real people in a meeting transcript.
 
@@ -191,7 +198,7 @@ Speaker labels in the transcript: ${speakers.join(', ')}
 ${userName ? `The person who recorded this meeting is ${userName}. They are almost certainly one of the speakers.` : ''}
 ${candidates.length ? `People invited or likely present: ${candidates.join(', ')}` : 'No attendee list is available.'}
 ${known ? `Already identified:\n${known}` : ''}
-
+${markSection ? `\n${markSection}\n` : ''}
 Use evidence from the transcript: self-introductions ("this is Dana", "Dana here"), people addressing each other by name ("thanks, Dana" said to the speaker who just spoke, or a question directed at someone who then answers), and role context. Prefer names from the attendee list. Never invent a name that is neither on the list nor spoken in the transcript. If the evidence is thin, say so with a lower confidence rather than guessing.
 
 Confidence:
@@ -258,10 +265,11 @@ export async function identifySpeakers(recordingId: string): Promise<{ success: 
     userName,
     title: recording.calendarEvent?.title || recording.title || '',
     alreadyNamed: recording.speakerNames || {},
+    marks: Array.isArray(recording.speakerMarks) ? recording.speakerMarks : [],
   });
 
   try {
-    log('info', 'Identifying speakers with Claude', { recordingId, speakers: speakers.length, candidates: candidates.length });
+    log('info', 'Identifying speakers with Claude', { recordingId, speakers: speakers.length, candidates: candidates.length, marks: recording.speakerMarks?.length || 0 });
     const text = await runClaudePrompt(prompt, { maxTokens: 2000 });
     const suggestions = parseSuggestions(text, speakers);
     updateManifest(recordingId, m => {

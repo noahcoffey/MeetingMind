@@ -10,6 +10,8 @@ import {
   pauseRecording,
   resumeRecording,
   getRecordingStatus,
+  addSpeakerMark,
+  undoSpeakerMark,
   listRecordings,
   getRecording,
   deleteRecording,
@@ -226,6 +228,14 @@ export function setupIpcHandlers(): void {
 
   handle('recording:status', async () => {
     return getRecordingStatus();
+  });
+
+  handle('recording:markSpeaker', async (_event, name: unknown) => {
+    return addSpeakerMark(name);
+  });
+
+  handle('recording:undoSpeakerMark', async () => {
+    return undoSpeakerMark();
   });
 
   // Recordings library

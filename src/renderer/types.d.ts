@@ -42,7 +42,12 @@ export interface MeetingMindAPI {
     recording: boolean; duration: number; chunkCount: number; isPaused: boolean;
     sessionId?: string; title?: string; calendarEventId?: string; calendarEventProvider?: string;
     userContext?: string; inputDevice?: string; systemAudioDevice?: string;
+    speakerMarks?: SpeakerMark[];
   }>;
+  /** While recording: note that this person is talking now. Main stamps the time. */
+  markSpeaker: (name: string) => Promise<{ success: boolean; mark?: SpeakerMark; error?: string }>;
+  /** Take back the last mark. */
+  undoSpeakerMark: () => Promise<{ success: boolean; mark?: SpeakerMark; error?: string }>;
   getRecordings: (range?: MsRange) => Promise<Recording[]>;
   getRecordingIndex: () => Promise<RecordingIndexEntry[]>;
   getRecording: (id: string) => Promise<Recording | null>;
@@ -152,6 +157,8 @@ export interface Recording {
   speakerNamesSource?: 'claude';
   speakerSuggestions?: SpeakerSuggestions;
   speakerSuggestionsAt?: string;
+  /** Names tapped during the recording, on the audio timeline (ms). */
+  speakerMarks?: SpeakerMark[];
   awaitingSpeakerReview?: { since: string; unnamed: number };
   tags?: string[];
   notebook?: string;
@@ -223,6 +230,11 @@ export interface SpeakerSuggestion {
 }
 
 export type SpeakerSuggestions = Record<string, SpeakerSuggestion>;
+
+export interface SpeakerMark {
+  name: string;
+  atMs: number;
+}
 
 export interface TranscriptUtterance {
   speaker: string;
