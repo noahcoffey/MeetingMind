@@ -93,6 +93,17 @@ token call doesn't have). `externalId` is the recording id, so re-sends update t
 it's accepted or dismissed. Status lands on the manifest as `clubtools`. The response mapping is
 tested in `clubtools.test.ts`.
 
+## Speaker marks (tap names while recording)
+
+`src/main/speaker-marks.ts` (tested). During a recording the Record page shows the invite's attendees
+as chips (`record/SpeakerMarkPanel.tsx`); a tap calls `recording:markSpeaker`, and **main** stamps it
+with `getElapsedMs()` (pause-aware) — never the renderer's timer. Recording time is not audio time:
+each 5-minute chunk is a new ffmpeg process and the gaps between them aren't in the audio, so
+`startChunk` records `chunkStarts`, and at stop (and crash recovery) `marksToAudioTime` places each
+mark by its chunk using the chunk's real length (`wavDurationMs`). The result is `speakerMarks`
+(`{name, atMs}`, audio ms) on the manifest; `buildIdentifyPrompt` matches them to utterances
+(`tallyMarks`) and hands Claude the tally. `decideGate` doesn't read marks directly.
+
 ## Bundled Python interpreter (WhisperX Local)
 
 WhisperX Local runs transcription/diarization on-device through Python. To avoid requiring users to install Python, a hermetic [python-build-standalone](https://github.com/astral-sh/python-build-standalone) CPython 3.11 is bundled inside the app — the same pattern as the bundled `ffmpeg`.
