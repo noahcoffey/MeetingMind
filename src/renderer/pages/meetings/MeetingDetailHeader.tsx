@@ -29,6 +29,8 @@ interface MeetingDetailHeaderProps {
   handleSaveToObsidian: () => void;
   handleSendToMeetingHub: () => void;
   meetinghubVisible: boolean;
+  handleSendToClubTools: () => void;
+  clubtoolsVisible: boolean;
   showToast: (msg: string) => void;
   refreshSelectedMeeting: () => void;
   loadMeetings: () => void;
@@ -66,6 +68,8 @@ export default function MeetingDetailHeader({
   handleSaveToObsidian,
   handleSendToMeetingHub,
   meetinghubVisible,
+  handleSendToClubTools,
+  clubtoolsVisible,
   showToast,
   refreshSelectedMeeting,
   loadMeetings,
@@ -199,6 +203,11 @@ export default function MeetingDetailHeader({
                   {meetinghubVisible && (
                     <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSendToMeetingHub(); }}>
                       {(selectedMeeting as any).meetinghub?.status === 'sent' ? 'Re-send to MeetingHub' : 'Send to MeetingHub'}
+                    </button>
+                  )}
+                  {clubtoolsVisible && (
+                    <button className="actions-dropdown-item" onClick={() => { setShowActionsMenu(false); handleSendToClubTools(); }}>
+                      {selectedMeeting.clubtools?.status === 'sent' ? 'Re-send to Club Tools' : 'Send to Club Tools'}
                     </button>
                   )}
                   <button className="actions-dropdown-item" onClick={() => {
@@ -389,6 +398,41 @@ export default function MeetingDetailHeader({
               }}
             >
               {labels[mh.status] || mh.status}
+            </span>
+          );
+        })()}
+        {clubtoolsVisible && selectedMeeting.clubtools?.status && (() => {
+          const ct = selectedMeeting.clubtools;
+          const colors: Record<string, string> = {
+            sent: '#e67e22',
+            accepted: 'var(--accent-green)',
+            dismissed: 'var(--text-muted)',
+            error: '#e74c3c',
+          };
+          const labels: Record<string, string> = {
+            sent: 'Club Tools: in inbox',
+            accepted: 'Club Tools ✓',
+            dismissed: 'Club Tools: dismissed',
+            error: 'Club Tools: failed',
+          };
+          const color = colors[ct.status] || 'var(--text-muted)';
+          return (
+            <span
+              title={ct.detail || ''}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                padding: '2px 10px',
+                borderRadius: 10,
+                fontSize: 11,
+                fontWeight: 500,
+                color,
+                background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+                cursor: 'default',
+              }}
+            >
+              {labels[ct.status] || ct.status}
             </span>
           );
         })()}

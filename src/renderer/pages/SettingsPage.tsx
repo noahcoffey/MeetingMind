@@ -6,8 +6,9 @@ import VocabularySettings from './settings/VocabularySettings';
 import CalendarSettings from './settings/CalendarSettings';
 import ObsidianSettings from './settings/ObsidianSettings';
 import MeetingHubSettings from './settings/MeetingHubSettings';
+import ClubToolsSettings from './settings/ClubToolsSettings';
 
-type SettingsSection = 'general' | 'recording' | 'ai-notes' | 'vocabulary' | 'calendar' | 'obsidian' | 'meetinghub';
+type SettingsSection = 'general' | 'recording' | 'ai-notes' | 'vocabulary' | 'calendar' | 'obsidian' | 'meetinghub' | 'clubtools';
 
 const SECTIONS: { key: SettingsSection; label: string; icon: string }[] = [
   { key: 'general', label: 'General', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z' },
@@ -17,10 +18,12 @@ const SECTIONS: { key: SettingsSection; label: string; icon: string }[] = [
   { key: 'calendar', label: 'Calendar', icon: 'M16 2v4 M8 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z' },
   { key: 'obsidian', label: 'Obsidian', icon: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8' },
   { key: 'meetinghub', label: 'MeetingHub', icon: 'M22 2 11 13 M22 2 15 22 11 13 2 9 22 2Z' },
+  { key: 'clubtools', label: 'Club Tools', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75' },
 ];
 
 const SETTING_LABELS: Record<string, string> = {
   meetinghubBaseUrl: 'MeetingHub URL (must use https://)',
+  clubtoolsBaseUrl: 'Club Tools URL (must use https://)',
   recordingOutputFolder: 'Recordings folder',
   obsidianVaultPath: 'Obsidian vault folder',
 };
@@ -45,6 +48,8 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
   const [hasDeepgramKey, setHasDeepgramKey] = useState(false);
   const [hasHfToken, setHasHfToken] = useState(false);
   const [hasMeetinghubKey, setHasMeetinghubKey] = useState(false);
+  const [clubtoolsKey, setClubtoolsKey] = useState('');
+  const [hasClubtoolsKey, setHasClubtoolsKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -60,6 +65,7 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
       setHasDeepgramKey(await window.meetingMind.hasApiKey('deepgram'));
       setHasHfToken(await window.meetingMind.hasApiKey('huggingface'));
       setHasMeetinghubKey(await window.meetingMind.hasApiKey('meetinghub'));
+      setHasClubtoolsKey(await window.meetingMind.hasApiKey('clubtools'));
     } catch {
       console.error('Failed to load settings');
     }
@@ -79,6 +85,7 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
     if (deepgramKey) { await window.meetingMind.setApiKey('deepgram', deepgramKey); setHasDeepgramKey(true); setDeepgramKey(''); }
     if (hfToken) { await window.meetingMind.setApiKey('huggingface', hfToken); setHasHfToken(true); setHfToken(''); }
     if (meetinghubKey) { await window.meetingMind.setApiKey('meetinghub', meetinghubKey); setHasMeetinghubKey(true); setMeetinghubKey(''); }
+    if (clubtoolsKey) { await window.meetingMind.setApiKey('clubtools', clubtoolsKey.trim()); setHasClubtoolsKey(true); setClubtoolsKey(''); }
     onSettingsChange();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -97,7 +104,9 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
   // sidebar until a user opts in, or auto-reveal it if they already have
   // notebooks configured for it (e.g. settings carried over from an older build).
   const meetinghubVisible = !!settings.meetinghubEnabled || (settings.meetinghubNotebooks || []).length > 0;
-  const visibleSections = SECTIONS.filter(s => s.key !== 'meetinghub' || meetinghubVisible);
+  const clubtoolsVisible = !!settings.clubtoolsEnabled;
+  const visibleSections = SECTIONS.filter(s =>
+    (s.key !== 'meetinghub' || meetinghubVisible) && (s.key !== 'clubtools' || clubtoolsVisible));
   const currentSection = visibleSections.find(s => s.key === section) || visibleSections[0];
 
   return (
@@ -180,6 +189,12 @@ export default function SettingsPage({ onSettingsChange, initialSection }: Setti
               <MeetingHubSettings
                 settings={settings} updateSetting={updateSetting}
                 meetinghubKey={meetinghubKey} setMeetinghubKey={setMeetinghubKey} hasMeetinghubKey={hasMeetinghubKey}
+              />
+            )}
+            {section === 'clubtools' && (
+              <ClubToolsSettings
+                settings={settings} updateSetting={updateSetting}
+                clubtoolsKey={clubtoolsKey} setClubtoolsKey={setClubtoolsKey} hasClubtoolsKey={hasClubtoolsKey}
               />
             )}
           </div>

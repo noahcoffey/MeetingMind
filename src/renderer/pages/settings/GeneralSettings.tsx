@@ -137,6 +137,19 @@ export default function GeneralSettings({ settings, updateSetting, onSelectFolde
           Reveals a MeetingHub settings tab for pushing notes to a self-hosted MeetingHub ingest endpoint.
         </div>
       </div>
+      <div className="form-group">
+        <label className="form-label settings-toggle">
+          <input
+            type="checkbox"
+            checked={settings.clubtoolsEnabled || false}
+            onChange={e => updateSetting('clubtoolsEnabled', e.target.checked)}
+          />
+          Enable Club Tools sync (advanced)
+        </label>
+        <div className="form-hint">
+          Reveals a Club Tools settings tab for sending notes to the Kiwanis Club Tools minutes inbox.
+        </div>
+      </div>
     </>
   );
 }

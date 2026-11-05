@@ -9,6 +9,7 @@ import { autoTagRecording } from './tagger';
 import { runClaude } from './claude-cli';
 import { LIGHT_MODEL } from './claude-models';
 import { sendToMeetingHub } from './meetinghub';
+import { sendToClubTools } from './clubtools';
 import { clearSpeakerReview } from './speaker-review';
 
 const DEFAULT_PROMPT = `You are a professional meeting notes assistant. Based on the transcript and context below, generate structured meeting notes in Markdown format.
@@ -223,6 +224,19 @@ export async function generateNotes(recordingId: string): Promise<{ success: boo
         })
         .catch((err: any) => {
           log('warn', 'Auto-push to MeetingHub error', { recordingId, error: err.message });
+        });
+    }
+
+    // Send to the Club Tools inbox for notebooks opted in under Settings > Club Tools.
+    // Club Tools only suggests a meeting; an admin accepts the notes into the minutes there.
+    const clubtoolsNotebooks = getSetting('clubtoolsNotebooks') || [];
+    if (getSetting('clubtoolsEnabled') && clubtoolsNotebooks.includes(recNotebook)) {
+      sendToClubTools(recordingId)
+        .then(result => {
+          if (!result.success) log('warn', 'Auto-send to Club Tools failed', { recordingId, error: result.error });
+        })
+        .catch((err: any) => {
+          log('warn', 'Auto-send to Club Tools error', { recordingId, error: err.message });
         });
     }
 

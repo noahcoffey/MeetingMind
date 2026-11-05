@@ -36,7 +36,7 @@ describe('external URLs', () => {
 });
 
 describe('settings writes', () => {
-  const keys = new Set(['meetinghubBaseUrl', 'recordingOutputFolder', 'obsidianVaultPath', 'theme']);
+  const keys = new Set(['meetinghubBaseUrl', 'clubtoolsBaseUrl', 'recordingOutputFolder', 'obsidianVaultPath', 'theme']);
 
   test('only real settings', () => {
     expect(checkSettingWrite('theme', 'dark', keys)).toBeNull();
@@ -49,6 +49,12 @@ describe('settings writes', () => {
     expect(isAllowedMeetingHubUrl('http://localhost:3000')).toBe(true);
     expect(isAllowedMeetingHubUrl('')).toBe(true);
     expect(checkSettingWrite('meetinghubBaseUrl', 'http://evil.example.com', keys)).toMatch(/https/);
+  });
+
+  test('the Club Tools token only goes over https (or to this machine)', () => {
+    expect(checkSettingWrite('clubtoolsBaseUrl', 'https://tools.avonkiwanis.org', keys)).toBeNull();
+    expect(checkSettingWrite('clubtoolsBaseUrl', 'http://localhost:3000', keys)).toBeNull();
+    expect(checkSettingWrite('clubtoolsBaseUrl', 'http://tools.avonkiwanis.org', keys)).toMatch(/https/);
   });
 
   test('folders must be absolute and not the disk root', () => {
@@ -68,6 +74,10 @@ describe('IPC senders', () => {
     expect(isTrustedSenderUrl('https://example.com/renderer/index.html', false)).toBe(false);
     expect(isTrustedSenderUrl(undefined, false)).toBe(false);
   });
+});
+
+test('the renderer can save the Club Tools token', () => {
+  expect(RENDERER_KEY_SERVICES.has('clubtools')).toBe(true);
 });
 
 test('calendar tokens are not among the keys the renderer can touch', () => {

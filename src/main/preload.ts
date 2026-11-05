@@ -62,6 +62,8 @@ const api = {
   sendToMeetingHub: (recordingId: string) => ipcRenderer.invoke('meetinghub:send', recordingId),
   getMeetingHubActivity: () => ipcRenderer.invoke('meetinghub:getActivity'),
   clearMeetingHubActivity: () => ipcRenderer.invoke('meetinghub:clearActivity'),
+  // Club Tools inbox (Kiwanis minutes)
+  sendToClubTools: (recordingId: string) => ipcRenderer.invoke('clubtools:send', recordingId),
 
   // Calendar
   getCalendarEvents: (bypassCache?: boolean) => ipcRenderer.invoke('calendar:getEvents', bypassCache),
@@ -161,6 +163,7 @@ const api = {
       'project-summary:complete',
       'meetinghub:status',
       'meetinghub:activity',
+      'clubtools:status',
       'speakers:review-needed',
       'speakers:review-complete',
       'speakers:open-review',
