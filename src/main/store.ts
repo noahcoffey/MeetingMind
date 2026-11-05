@@ -67,6 +67,12 @@ export interface AppSettings {
   meetinghubEnabled: boolean;
   meetinghubBaseUrl: string;
   meetinghubNotebooks: string[]; // notebooks for which notes auto-push after generation
+  // Club Tools (the Kiwanis secretary toolkit, sok) inbox sync. Same shape as MeetingHub:
+  // the API token (sok_...) lives in the Keychain under account 'clubtools', and the
+  // settings tab stays hidden until enabled.
+  clubtoolsEnabled: boolean;
+  clubtoolsBaseUrl: string;
+  clubtoolsNotebooks: string[]; // notebooks whose notes are sent to Club Tools after generation
 }
 
 const defaults: AppSettings = {
@@ -108,6 +114,9 @@ const defaults: AppSettings = {
   meetinghubEnabled: false,
   meetinghubBaseUrl: '',
   meetinghubNotebooks: [],
+  clubtoolsEnabled: false,
+  clubtoolsBaseUrl: '',
+  clubtoolsNotebooks: [],
 };
 
 let store: Store<AppSettings>;

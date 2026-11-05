@@ -23,6 +23,7 @@ import {
 import { startTranscription, getTranscriptionStatus } from './transcription';
 import { generateNotes, getNotes, updateNotes, saveNotes, saveToObsidian, analyzeSentiment } from './notes-generator';
 import { sendToMeetingHub, getMeetingHubActivity, clearMeetingHubActivity } from './meetinghub';
+import { sendToClubTools } from './clubtools';
 import { prepareSpeakerReview, identifySpeakers, listAwaitingReview } from './speaker-review';
 import { getCalendarEvents, invalidateCalendarCache, connectGoogle, connectMicrosoft, disconnectCalendar } from './calendar';
 import { listSystemAudioDevices } from './system-audio';
@@ -45,7 +46,7 @@ const RECORDING_ID_FIRST = new Set([
   'recordings:get', 'recordings:delete', 'recordings:renameTitle', 'recordings:moveToNotebook', 'recordings:setTags',
   'transcription:start', 'transcription:status', 'transcription:getTranscript',
   'notes:generate', 'notes:get', 'notes:update', 'notes:save', 'notes:saveObsidian',
-  'meetinghub:send',
+  'meetinghub:send', 'clubtools:send',
   'export:clipboard', 'export:pdf', 'export:email', 'export:transcriptClipboard', 'export:transcriptFile',
   'speakers:rename', 'speakers:prepareForNotes', 'speakers:identify',
   'projects:moveRecording', 'sentiment:analyze',
@@ -314,6 +315,11 @@ export function setupIpcHandlers(): void {
 
   handle('meetinghub:clearActivity', async () => {
     return clearMeetingHubActivity();
+  });
+
+  // Club Tools inbox (Kiwanis minutes)
+  handle('clubtools:send', async (_event, recordingId: string) => {
+    return sendToClubTools(recordingId);
   });
 
   // Calendar

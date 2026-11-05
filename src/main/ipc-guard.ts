@@ -27,6 +27,7 @@ export const RENDERER_KEY_SERVICES = new Set([
   'deepgram',
   'huggingface',
   'meetinghub',
+  'clubtools',
 ]);
 
 /** URLs the app will hand to the OS to open. */
@@ -40,7 +41,7 @@ export function isSafeExternalUrl(url: unknown): url is string {
   }
 }
 
-/** A MeetingHub base URL the API key may be sent to: https, or plain http to this machine. */
+/** A MeetingHub or Club Tools base URL an API key may be sent to: https, or plain http to this machine. */
 export function isAllowedMeetingHubUrl(value: unknown): boolean {
   if (value === '' || value === undefined || value === null) return true;
   if (typeof value !== 'string') return false;
@@ -62,6 +63,9 @@ export function checkSettingWrite(key: unknown, value: unknown, knownKeys: Set<s
   if (typeof key !== 'string' || !knownKeys.has(key)) return `Unknown setting: ${String(key)}`;
   if (key === 'meetinghubBaseUrl' && !isAllowedMeetingHubUrl(value)) {
     return 'MeetingHub URL must use https://';
+  }
+  if (key === 'clubtoolsBaseUrl' && !isAllowedMeetingHubUrl(value)) {
+    return 'Club Tools URL must use https://';
   }
   if (key === 'retentionDays' && !(typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 3650)) {
     return 'Retention must be a whole number of days';

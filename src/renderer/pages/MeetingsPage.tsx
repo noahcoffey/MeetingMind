@@ -52,6 +52,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showCostData, setShowCostData] = useState(false);
   const [meetinghubVisible, setMeetinghubVisible] = useState(false);
+  const [clubtoolsVisible, setClubtoolsVisible] = useState(false);
   const [userName, setUserName] = useState('');
   const [qaEntries, setQaEntries] = useState<QAEntry[]>([]);
   const [qaQuestion, setQaQuestion] = useState('');
@@ -95,6 +96,7 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     window.meetingMind.getSettings().then((s: any) => {
       setShowCostData(!!s.showCostData);
       setMeetinghubVisible(!!s.meetinghubEnabled || (s.meetinghubNotebooks || []).length > 0);
+      setClubtoolsVisible(!!s.clubtoolsEnabled);
       setUserName(s.userName || '');
     });
 
@@ -152,12 +154,16 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     const unsubMeetingHub = window.meetingMind.on('meetinghub:status', () => {
       refreshSelectedMeeting();
     });
+    const unsubClubTools = window.meetingMind.on('clubtools:status', () => {
+      refreshSelectedMeeting();
+    });
 
     return () => {
       unsubProgress();
       unsubNotesComplete();
       unsubSentiment();
       unsubMeetingHub();
+      unsubClubTools();
       unsubReviewNeeded();
       unsubSuggestions();
       unsubReviewComplete();
@@ -442,6 +448,14 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
     }
   }
 
+  async function handleSendToClubTools() {
+    if (!selectedMeeting) return;
+    showToast('Sending to Club Tools...');
+    const result = await window.meetingMind.sendToClubTools(selectedMeeting.id);
+    showToast(result.success ? (result.detail || 'Sent to Club Tools') : `Club Tools: ${result.error}`);
+    refreshSelectedMeeting();
+  }
+
   async function handleDeleteMeeting() {
     if (!selectedMeeting) return;
     const result = await window.meetingMind.deleteRecording(selectedMeeting.id);
@@ -672,6 +686,8 @@ export default function MeetingsPage({ initialMeetingId, activeNotebook, noteboo
                 handleSaveToObsidian={handleSaveToObsidian}
                 handleSendToMeetingHub={handleSendToMeetingHub}
                 meetinghubVisible={meetinghubVisible}
+                handleSendToClubTools={handleSendToClubTools}
+                clubtoolsVisible={clubtoolsVisible}
                 showToast={showToast}
                 refreshSelectedMeeting={refreshSelectedMeeting}
                 loadMeetings={loadMeetings}

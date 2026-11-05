@@ -82,6 +82,17 @@ check keeps working. `generateNotes()` clears the flag whichever button started 
 (MeetingHub ingest is first-send-wins, which is why the gate sits *before* generation). Parked
 recordings are re-seeded into the pipeline widget on launch via `speakers:listAwaitingReview`.
 
+## Club Tools inbox (Kiwanis minutes)
+
+`src/main/clubtools.ts` sends generated notes for notebooks checked in Settings → Club Tools (hidden
+until `clubtoolsEnabled`) to Club Tools (`../sok`, tools.avonkiwanis.org):
+`POST /api/meetingmind/submissions` with an admin's `sok_...` API token (keytar account `clubtools`).
+Club Tools only *stages* them: it suggests the calendar meeting on the same day and an admin accepts
+them into that meeting's Minutes Google Doc there (Drive writes need their Google session, which a
+token call doesn't have). `externalId` is the recording id, so re-sends update the inbox entry until
+it's accepted or dismissed. Status lands on the manifest as `clubtools`. The response mapping is
+tested in `clubtools.test.ts`.
+
 ## Bundled Python interpreter (WhisperX Local)
 
 WhisperX Local runs transcription/diarization on-device through Python. To avoid requiring users to install Python, a hermetic [python-build-standalone](https://github.com/astral-sh/python-build-standalone) CPython 3.11 is bundled inside the app — the same pattern as the bundled `ffmpeg`.

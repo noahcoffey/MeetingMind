@@ -60,6 +60,7 @@ export interface MeetingMindAPI {
   sendToMeetingHub: (recordingId: string) => Promise<{ success: boolean; status?: 'sent' | 'pending' | 'skipped' | 'error'; detail?: string; error?: string }>;
   getMeetingHubActivity: () => Promise<MeetingHubLogEntry[]>;
   clearMeetingHubActivity: () => Promise<{ success: boolean }>;
+  sendToClubTools: (recordingId: string) => Promise<{ success: boolean; status?: 'sent' | 'accepted' | 'dismissed' | 'error'; detail?: string; error?: string }>;
   getCalendarEvents: (bypassCache?: boolean) => Promise<CalendarEvent[]>;
   connectGoogleCalendar: () => Promise<{ success: boolean; error?: string }>;
   connectMicrosoftCalendar: () => Promise<{ success: boolean; error?: string }>;
@@ -140,6 +141,12 @@ export interface Recording {
     sourceId?: string;
     meetingId?: string;
     pendingId?: string;
+  };
+  clubtools?: {
+    status: 'sent' | 'accepted' | 'dismissed' | 'error';
+    at: string;
+    detail?: string;
+    submissionId?: string;
   };
   speakerNames?: Record<string, string>;
   speakerNamesSource?: 'claude';
