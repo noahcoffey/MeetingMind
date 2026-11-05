@@ -41,6 +41,20 @@ export default function RecordingSettings({
   const [setupState, setSetupState] = useState<'idle' | 'running' | 'error'>('idle');
   const [setupMessage, setSetupMessage] = useState('');
 
+  // Microphones by avfoundation name, the same list the Record page picks from
+  const [inputDevices, setInputDevices] = useState<{ name: string; isVirtual?: boolean }[]>([]);
+  useEffect(() => {
+    let mounted = true;
+    window.meetingMind.getSystemAudioDevices()
+      .then((devs: any[]) => { if (mounted) setInputDevices(devs || []); })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+  const savedMic: string = settings.defaultInputDevice || 'default';
+  // A browser device-id hash saved by older onboarding isn't a name we can show
+  const savedMicIsName = savedMic !== 'default' && !/^[0-9a-f]{40,}$/i.test(savedMic);
+  const savedMicMissing = savedMicIsName && inputDevices.length > 0 && !inputDevices.some(d => d.name === savedMic);
+
   useEffect(() => {
     let mounted = true;
     window.meetingMind.checkWhisperXReady().then((r: { ready: boolean }) => {
@@ -82,14 +96,24 @@ export default function RecordingSettings({
     <>
       <div className="settings-row">
         <div className="form-group" style={{ flex: 1 }}>
-          <label className="form-label">Audio Input Device</label>
+          <label className="form-label">Default Microphone</label>
           <select
             className="form-select"
-            value={settings.defaultInputDevice || 'default'}
+            value={savedMicIsName ? savedMic : 'default'}
             onChange={e => updateSetting('defaultInputDevice', e.target.value)}
           >
             <option value="default">System Default</option>
+            {inputDevices.map(d => (
+              <option key={d.name} value={d.name}>
+                {d.name}{d.isVirtual ? ' (virtual)' : ''}
+              </option>
+            ))}
+            {savedMicMissing && <option value={savedMic}>{savedMic} (not connected)</option>}
           </select>
+          <div className="form-hint">
+            Recording starts on this mic whenever it's plugged in, without changing the macOS
+            default. Picking a mic on the Record page updates it too.
+          </div>
         </div>
         <div className="form-group" style={{ flex: 1 }}>
           <label className="form-label">Transcription Provider</label>

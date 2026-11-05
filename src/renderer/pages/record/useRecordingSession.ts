@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { resolvePreferredMic } from './preferred-mic';
 import { timerRefsFromStatus } from '../../resume-recording';
 import { useAudioLevelMonitor } from './useAudioLevelMonitor';
 
@@ -66,7 +67,16 @@ export function useRecordingSession({ onRecordingComplete, onRecordingSaved, act
     setupListeners();
     resumeActiveRecording();
 
+    // Plugging in (or unplugging) a mic: refresh both lists so the saved mic is
+    // picked up as soon as it appears, or dropped back to the default when it goes.
+    const onDeviceChange = () => {
+      loadDevices();
+      loadSystemAudioDevices();
+    };
+    navigator.mediaDevices?.addEventListener('devicechange', onDeviceChange);
+
     return () => {
+      navigator.mediaDevices?.removeEventListener('devicechange', onDeviceChange);
       cleanupListeners();
       if (timerRef.current) clearInterval(timerRef.current);
       stopAudioLevelMonitor();
@@ -148,7 +158,21 @@ export function useRecordingSession({ onRecordingComplete, onRecordingSaved, act
     try {
       const devs = await window.meetingMind.getSystemAudioDevices();
       setSystemAudioDevices(devs);
+      // Start on the saved mic when it's connected. Never switch a running
+      // recording's mic (or one picked back up from main).
+      if (stageRef.current === 'idle') {
+        const settings = await window.meetingMind.getSettings();
+        if (stageRef.current === 'idle') {
+          setSelectedDevice(resolvePreferredMic(settings.defaultInputDevice as string | undefined, devs));
+        }
+      }
     } catch {}
+  }
+
+  /** Picking a mic on the Record page also makes it the default for next time. */
+  function chooseMic(name: string) {
+    setSelectedDevice(name);
+    window.meetingMind.setSetting('defaultInputDevice', name).catch(() => {});
   }
 
   async function loadCalendarEvents(bypassCache = false) {
@@ -462,7 +486,7 @@ export function useRecordingSession({ onRecordingComplete, onRecordingSaved, act
 
     devices,
     selectedDevice,
-    setSelectedDevice,
+    setSelectedDevice: chooseMic,
     systemAudioDevices,
     selectedSystemDevice,
     setSelectedSystemDevice,

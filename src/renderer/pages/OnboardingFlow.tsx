@@ -143,7 +143,10 @@ export default function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
 
   async function handleAudioDone() {
     stopTest();
-    await window.meetingMind.setSetting('defaultInputDevice', selectedDevice);
+    // Recording addresses mics by name; the browser's deviceId means nothing to ffmpeg
+    const picked = devices.find(d => d.deviceId === selectedDevice);
+    const name = selectedDevice === 'default' || !picked?.label ? 'default' : picked.label;
+    await window.meetingMind.setSetting('defaultInputDevice', name);
     setStep(4);
   }
 
