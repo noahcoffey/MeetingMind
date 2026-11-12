@@ -27,6 +27,11 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       stream: true,
       bypassCSP: true,
+      // Since Electron 45, media elements on our file:// page can't load from
+      // a custom scheme without this — the handler is never even called and
+      // <audio> reports a format error. The handler itself still limits what
+      // it serves to audio files in the recordings folder.
+      corsEnabled: true,
     },
   },
 ]);

@@ -120,4 +120,28 @@ describe('buildIdentifyPrompt', () => {
     expect(p).toContain('recorded this meeting is Noah Coffey');
     expect(p).toContain('[1:14] Speaker 1: Hi, this is Dana.');
   });
+
+  it('reports name marks matched to speakers', () => {
+    const p = buildIdentifyPrompt({
+      speakers: ['Speaker 1', 'Speaker 2'],
+      utterances: [
+        { speaker: 'Speaker 1', text: 'Kicking off.', start: 0, end: 10000 },
+        { speaker: 'Speaker 2', text: 'Numbers look good.', start: 10000, end: 30000 },
+      ],
+      candidates: ['Dana Whitfield'],
+      userName: '',
+      title: '',
+      alreadyNamed: {},
+      marks: [{ name: 'Dana Whitfield', atMs: 12000 }, { name: 'Dana Whitfield', atMs: 25000 }],
+    });
+    expect(p).toContain('While Speaker 2 was talking: Dana Whitfield ×2');
+    expect(p).toContain('[0:12] Dana Whitfield');
+  });
+
+  it('leaves the marks section out when there are none', () => {
+    const p = buildIdentifyPrompt({
+      speakers: ['Speaker 1'], utterances: [], candidates: [], userName: '', title: '', alreadyNamed: {},
+    });
+    expect(p).not.toContain('tapped');
+  });
 });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { TranscriptUtterance, SpeakerSuggestions } from '../types';
 import { pickSpeakerQuotes } from '../speaker-quotes';
+import { chipName } from '../attendee-name';
 
 const SPEAKER_COLORS = [
   '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
@@ -53,19 +54,6 @@ function fmtTime(ms: number): string {
 
 function isGenericName(key: string, name?: string): boolean {
   return !name || name === key || /^Speaker \d+$/i.test(name);
-}
-
-/** "dana.whitfield@x.com" → "Dana Whitfield"; keeps names as they are. */
-function chipName(raw: string): string {
-  let s = (raw || '').trim().replace(/^["']|["']$/g, '');
-  if (s.includes('@')) {
-    s = s.split('@')[0]
-      .split(/[._\-+]+/)
-      .filter(p => p && !/^\d+$/.test(p))
-      .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
-      .join(' ');
-  }
-  return s;
 }
 
 export default function SpeakerPanel({
